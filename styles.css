@@ -732,11 +732,41 @@ textarea {
 }
 
 .project-detail .task-list {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .project-detail .task-row {
-  align-content: start;
+  grid-template-columns: minmax(220px, 1fr) 92px auto auto;
+  min-height: auto;
+  align-content: center;
+  padding: 10px 12px;
+}
+
+.project-detail .task-row input:first-child {
+  font-weight: 800;
+}
+
+.project-detail .task-row input[type="number"] {
+  text-align: right;
+}
+
+.project-detail .task-row textarea {
+  min-height: 44px;
+  padding-block: 8px;
+}
+
+.project-detail .task-row textarea:disabled:placeholder-shown {
+  display: none;
+}
+
+.project-detail .task-row textarea:disabled {
+  min-height: 0;
+  padding: 0;
+}
+
+.project-detail .task-row button {
+  min-width: 64px;
+  white-space: nowrap;
 }
 
 .ai-head {
