@@ -1,0 +1,12 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Self Calendar logo">
+  <rect x="12" y="16" width="72" height="68" rx="18" fill="#F8FBFF"/>
+  <rect x="12" y="16" width="72" height="68" rx="18" stroke="#2563EB" stroke-width="5"/>
+  <path d="M30 12V24" stroke="#2563EB" stroke-width="6" stroke-linecap="round"/>
+  <path d="M66 12V24" stroke="#2563EB" stroke-width="6" stroke-linecap="round"/>
+  <path d="M26 36H70" stroke="#D8DEE8" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="34" cy="52" r="5" fill="#0F766E"/>
+  <circle cx="48" cy="52" r="5" fill="#B45309"/>
+  <circle cx="62" cy="52" r="5" fill="#7C3AED"/>
+  <path d="M34 68C38 72 42.7 74 48 74C53.3 74 58 72 62 68" stroke="#1F2933" stroke-width="5" stroke-linecap="round"/>
+  <path d="M25 33C25 29.6863 27.6863 27 31 27H65C68.3137 27 71 29.6863 71 33V36H25V33Z" fill="#EAF1FF"/>
+</svg>

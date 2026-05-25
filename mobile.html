@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Self Calendar Mobile</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
+    <link rel="manifest" href="./assets/site.webmanifest" />
+    <link rel="stylesheet" href="./mobile.css" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="mobile-header">
+        <img src="./assets/logo.svg" alt="Self Calendar" />
+        <div>
+          <p>Self Calendar</p>
+          <h1 id="mobileTitle">今天</h1>
+        </div>
+        <span id="syncPill">本地</span>
+      </header>
+
+      <section id="calendarScreen" class="screen active">
+        <div class="week-strip" id="weekStrip"></div>
+
+        <section class="summary-card">
+          <div>
+            <span>计划</span>
+            <strong id="mobilePlannedTotal">0h</strong>
+          </div>
+          <div>
+            <span>实际</span>
+            <strong id="mobileActualTotal">0h</strong>
+          </div>
+          <div>
+            <span>完成率</span>
+            <strong id="mobileCompletion">0%</strong>
+          </div>
+        </section>
+
+        <section class="mobile-section">
+          <div class="section-head">
+            <h2>计划</h2>
+            <button id="showPlanForm" type="button">添加</button>
+          </div>
+          <form id="mobilePlanForm" class="mobile-form collapsed">
+            <select id="mobilePlanProject" required></select>
+            <select id="mobilePlanTask" required></select>
+            <input id="mobilePlanTitle" type="text" placeholder="计划标题，可留空" />
+            <div class="two-col">
+              <input id="mobilePlanStart" type="time" required />
+              <input id="mobilePlanEnd" type="time" required />
+            </div>
+            <textarea id="mobilePlanNotes" placeholder="备注"></textarea>
+            <button type="submit">保存计划</button>
+          </form>
+          <div id="mobilePlannedList" class="mobile-list"></div>
+        </section>
+
+        <section class="mobile-section">
+          <div class="section-head">
+            <h2>实际</h2>
+            <button id="showActualForm" type="button">记录</button>
+          </div>
+          <div class="mobile-timer">
+            <select id="mobileTimerProject" aria-label="番茄钟项目"></select>
+            <select id="mobileTimerTask" aria-label="番茄钟任务"></select>
+            <input id="mobileTimerMinutes" type="number" min="1" max="180" value="25" aria-label="分钟" />
+            <button id="mobileTimerStart" type="button">专注</button>
+          </div>
+          <form id="mobileActualForm" class="mobile-form collapsed">
+            <select id="mobileActualProject" required></select>
+            <select id="mobileActualTask"></select>
+            <input id="mobileActualTitle" type="text" placeholder="做了什么" required />
+            <input id="mobileActualDuration" type="number" min="0.1" step="0.1" placeholder="小时" required />
+            <textarea id="mobileActualNotes" placeholder="备注"></textarea>
+            <button type="submit">保存实际</button>
+          </form>
+          <div id="mobileActualList" class="mobile-list"></div>
+        </section>
+      </section>
+
+      <section id="projectsScreen" class="screen">
+        <section class="mobile-section">
+          <div class="section-head">
+            <h2>项目</h2>
+            <button id="showProjectForm" type="button">新建</button>
+          </div>
+          <form id="mobileProjectForm" class="mobile-form collapsed">
+            <input id="mobileProjectName" type="text" placeholder="项目名称" required />
+            <input id="mobileProjectEstimate" type="number" min="1" step="0.5" placeholder="预计总小时" required />
+            <textarea id="mobileProjectDescription" placeholder="描述"></textarea>
+            <button type="submit">保存项目</button>
+          </form>
+          <div id="mobileProjectList" class="mobile-list"></div>
+        </section>
+        <section id="mobileProjectDetail" class="mobile-section project-detail-card">
+          <p class="empty">点一个项目查看细分任务。</p>
+        </section>
+      </section>
+
+      <section id="reviewScreen" class="screen">
+        <section class="mobile-section review-card">
+          <div class="section-head">
+            <h2>每日复盘</h2>
+            <button id="mobileRunReview" type="button">生成</button>
+          </div>
+          <div id="mobileReview"></div>
+        </section>
+      </section>
+
+      <nav class="bottom-nav" aria-label="手机导航">
+        <button class="active" data-screen="calendarScreen" type="button">日历</button>
+        <button data-screen="projectsScreen" type="button">项目</button>
+        <button data-screen="reviewScreen" type="button">复盘</button>
+      </nav>
+    </main>
+
+    <div id="mobileFocusOverlay" class="mobile-focus" aria-hidden="true">
+      <section class="mobile-focus-panel">
+        <div class="focus-head">
+          <div>
+            <p>专注模式</p>
+            <h2 id="mobileFocusProject">番茄钟</h2>
+          </div>
+          <button id="mobileFocusClose" type="button">收起</button>
+        </div>
+        <div class="mobile-focus-ring" id="mobileFocusRing">
+          <div>
+            <strong id="mobileFocusTime">25:00</strong>
+            <span id="mobileFocusPercent">0%</span>
+          </div>
+        </div>
+        <div class="mobile-focus-bar"><span id="mobileFocusBar"></span></div>
+        <textarea id="mobileFocusNotes" placeholder="记录这段专注里具体做了什么。"></textarea>
+        <div class="focus-actions">
+          <button id="mobileFocusPause" type="button">暂停</button>
+          <button id="mobileFocusSave" type="button">停止并保存</button>
+          <button id="mobileFocusDiscard" class="danger" type="button">放弃</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="./mobile.js"></script>
+  </body>
+</html>

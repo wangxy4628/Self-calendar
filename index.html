@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Self Calendar</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
+    <link rel="shortcut icon" type="image/svg+xml" href="./assets/logo.svg" />
+    <link rel="manifest" href="./assets/site.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="./assets/logo.svg" alt="Self Calendar logo" />
+          <p class="eyebrow">Self Calendar</p>
+          <h1>把目标变成每天可见的时间投入</h1>
+        </div>
+        <nav class="nav" aria-label="主导航">
+          <button class="nav-button active" data-view="calendar" type="button">日历</button>
+          <button class="nav-button" data-view="projects" type="button">项目</button>
+        </nav>
+        <section class="today-summary" aria-label="今日概览">
+          <span>今日实际</span>
+          <strong id="todayActual">0h</strong>
+          <span>进行中项目</span>
+          <strong id="activeProjects">0</strong>
+          <span>同步状态</span>
+          <strong id="syncStatus">本地</strong>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section id="calendarView" class="view active-view">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">日历</p>
+              <h2>计划与实际</h2>
+            </div>
+            <div class="calendar-tools">
+              <div class="segmented" aria-label="日历视图">
+                <button class="mode-button active" data-calendar-mode="week" type="button">周</button>
+                <button class="mode-button" data-calendar-mode="month" type="button">月</button>
+              </div>
+              <label class="date-picker">
+                <span>选择日期</span>
+                <input id="selectedDate" type="date" />
+              </label>
+            </div>
+          </div>
+
+          <section id="calendarRange" class="range-view"></section>
+
+          <section id="dayEditor" class="day-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>计划</h3>
+                  <p>规划时间不会计入项目进度</p>
+                </div>
+                <strong id="plannedTotal">0h</strong>
+              </div>
+              <form id="planForm" class="form compact-form">
+                <select id="planProject" required></select>
+                <select id="planTask" required></select>
+                <input id="planTitle" type="text" placeholder="计划标题，可留空使用任务名" />
+                <div class="inline-fields">
+                  <input id="planStart" type="time" required />
+                  <input id="planEnd" type="time" required />
+                </div>
+                <textarea id="planNotes" placeholder="备注"></textarea>
+                <button type="submit">添加计划</button>
+              </form>
+              <div id="plannedList" class="entry-list"></div>
+              <div id="plannedDistribution" class="distribution"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>实际</h3>
+                  <p>实际记录会更新项目投入与进度</p>
+                </div>
+                <strong id="actualTotal">0h</strong>
+              </div>
+              <form id="actualForm" class="form compact-form">
+                <select id="actualProject" required></select>
+                <select id="actualTask"></select>
+                <input id="actualTitle" type="text" placeholder="做了什么" required />
+                <input id="actualDuration" type="number" min="0.1" step="0.1" placeholder="小时" required />
+                <textarea id="actualNotes" placeholder="备注"></textarea>
+                <button type="submit">记录实际</button>
+              </form>
+              <div class="timer">
+                <div class="timer-display" id="timerDisplay">25:00</div>
+                <div class="timer-controls">
+                  <select id="timerProject" aria-label="番茄钟项目"></select>
+                  <select id="timerTask" aria-label="番茄钟任务"></select>
+                  <input id="timerMinutes" type="number" min="1" max="180" value="25" aria-label="分钟" />
+                  <button id="timerStart" type="button">开始</button>
+                  <button id="timerPause" class="secondary" type="button">暂停</button>
+                  <button id="timerStop" class="secondary" type="button">停止保存</button>
+                </div>
+              </div>
+              <div id="actualList" class="entry-list"></div>
+              <div id="actualDistribution" class="distribution"></div>
+            </article>
+          </section>
+
+          <section class="panel review-panel">
+            <div class="panel-head">
+              <div>
+                <h3>每日复盘</h3>
+                <p>复盘今天的计划完成度，并让 AI 判断未来计划是否需要调整。</p>
+              </div>
+              <button id="runDailyReview" type="button">生成今日复盘</button>
+            </div>
+            <div id="reviewResult" class="review-result">
+              <p class="empty-state">完成一天后，可以在这里生成复盘。</p>
+            </div>
+          </section>
+        </section>
+
+        <section id="projectsView" class="view">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">项目</p>
+              <h2>目标与进度</h2>
+            </div>
+            <div class="header-actions">
+              <button id="exportIcs" type="button">导出 ICS</button>
+              <label class="file-button">
+                导入 ICS
+                <input id="importIcs" type="file" accept=".ics,text/calendar" />
+              </label>
+            </div>
+          </div>
+
+          <section class="project-layout">
+            <aside class="project-side">
+              <article class="panel project-form-panel">
+                <h3>新建项目</h3>
+                <form id="projectForm" class="form">
+                  <input id="projectName" type="text" placeholder="项目名称" required />
+                  <div class="inline-fields">
+                    <input id="projectEstimate" type="number" min="1" step="0.5" placeholder="预计总小时" required />
+                    <select id="projectStatus">
+                      <option value="in-progress">进行中</option>
+                      <option value="not-started">未开始</option>
+                      <option value="paused">暂停</option>
+                      <option value="completed">完成</option>
+                    </select>
+                  </div>
+                  <textarea id="projectDescription" placeholder="描述"></textarea>
+                  <button type="submit">保存项目</button>
+                </form>
+              </article>
+
+              <div id="projectList" class="project-list"></div>
+            </aside>
+
+            <article id="projectDetail" class="panel project-detail">
+              <p class="empty-state">选择一个项目查看详情，或者先创建你的第一个目标。</p>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="emptyTemplate">
+      <p class="empty-state">还没有记录。</p>
+    </template>
+
+    <div id="focusOverlay" class="focus-overlay" aria-hidden="true">
+      <section class="focus-panel" role="dialog" aria-modal="true" aria-label="番茄钟专注模式">
+        <div class="focus-top">
+          <div>
+            <p class="eyebrow">专注模式</p>
+            <h2 id="focusProjectName">Pomodoro</h2>
+          </div>
+          <button id="focusClose" class="secondary" type="button">收起</button>
+        </div>
+        <div class="focus-visual">
+          <div class="focus-ring" id="focusRing">
+            <div>
+              <strong id="focusTime">25:00</strong>
+              <span id="focusPercent">0%</span>
+            </div>
+          </div>
+          <div class="focus-progress">
+            <span id="focusProgressBar"></span>
+          </div>
+        </div>
+        <textarea id="focusNotes" placeholder="一边专注，一边记录：这段时间具体在做什么、遇到什么问题、下一步是什么。"></textarea>
+        <div class="focus-actions">
+          <button id="focusPause" type="button">暂停</button>
+          <button id="focusSave" class="secondary" type="button">停止并保存</button>
+          <button id="focusDiscard" class="secondary danger" type="button">放弃本次</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
