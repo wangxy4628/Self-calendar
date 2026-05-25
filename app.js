@@ -1,5 +1,6 @@
 const STORAGE_KEY = "self-calendar-mvp";
 const SYNC_TOKEN_KEY = "self-calendar-sync-token";
+const TIMER_STORAGE_KEY = "self-calendar-desktop-timer";
 const API_BASE = window.location.origin;
 
 const today = formatLocalDate(new Date());
@@ -55,6 +56,9 @@ let timer = {
   totalSeconds: 25 * 60,
   interval: null,
   running: false,
+  active: false,
+  startedAt: null,
+  pausedElapsedSeconds: 0,
   projectId: "",
   taskId: "",
   notes: ""
@@ -1074,6 +1078,17 @@ function bindEvents() {
   $("#focusDiscard").addEventListener("click", () => stopTimer(false));
   $("#focusNotes").addEventListener("input", (event) => {
     timer.notes = event.target.value;
+    saveTimerState();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && timer.active) tickTimer();
+    if (document.visibilityState === "hidden") saveTimerState();
+  });
+  window.addEventListener("focus", () => {
+    if (timer.active) tickTimer();
+  });
+  window.addEventListener("pageshow", () => {
+    if (timer.active) tickTimer();
   });
   $("#runDailyReview").addEventListener("click", async (event) => {
     event.target.textContent = "复盘中...";
@@ -1082,7 +1097,7 @@ function bindEvents() {
     saveAndRender();
   });
   $("#timerMinutes").addEventListener("change", () => {
-    if (!timer.running) {
+    if (!timer.active) {
       timer.secondsLeft = Number($("#timerMinutes").value || 25) * 60;
       timer.totalSeconds = timer.secondsLeft;
       updateTimerDisplay();
@@ -1092,32 +1107,40 @@ function bindEvents() {
 
 function startTimer() {
   if (timer.running) return;
-  if (!timer.interval) {
+  if (!timer.active) {
     timer.totalSeconds = Number($("#timerMinutes").value || 25) * 60;
     timer.secondsLeft = timer.totalSeconds;
     timer.projectId = $("#timerProject").value;
     timer.taskId = $("#timerTask").value;
+    timer.pausedElapsedSeconds = 0;
+    timer.notes = $("#focusNotes").value.trim();
+    timer.active = true;
   }
   showFocusOverlay();
   timer.running = true;
-  timer.interval = setInterval(() => {
-    timer.secondsLeft -= 1;
-    updateTimerDisplay();
-    if (timer.secondsLeft <= 0) completeTimer();
-  }, 1000);
+  timer.startedAt = Date.now();
+  saveTimerState();
+  timer.interval = setInterval(tickTimer, 1000);
+  tickTimer();
 }
 
 function pauseTimer() {
+  updateTimerFromClock();
   clearInterval(timer.interval);
   timer.interval = null;
+  timer.pausedElapsedSeconds = getTimerElapsedSeconds();
+  timer.startedAt = null;
   timer.running = false;
+  saveTimerState();
   updateFocusControls();
 }
 
 function stopTimer(saveElapsed = true) {
-  const elapsedSeconds = timer.totalSeconds - timer.secondsLeft;
+  updateTimerFromClock();
+  const elapsedSeconds = getTimerElapsedSeconds();
   timer.notes = $("#focusNotes").value.trim();
-  pauseTimer();
+  clearInterval(timer.interval);
+  timer.interval = null;
   if (saveElapsed && elapsedSeconds > 0) {
     addActual({
       date: state.selectedDate,
@@ -1131,11 +1154,16 @@ function stopTimer(saveElapsed = true) {
   }
   timer.secondsLeft = Number($("#timerMinutes").value || 25) * 60;
   timer.totalSeconds = timer.secondsLeft;
+  timer.active = false;
+  timer.running = false;
+  timer.startedAt = null;
+  timer.pausedElapsedSeconds = 0;
   timer.projectId = "";
   timer.taskId = "";
   timer.notes = "";
   $("#focusNotes").value = "";
   hideFocusOverlay();
+  localStorage.removeItem(TIMER_STORAGE_KEY);
   updateTimerDisplay();
 }
 
@@ -1144,11 +1172,12 @@ function completeTimer() {
 }
 
 function updateTimerDisplay() {
+  updateTimerFromClock();
   const minutes = Math.floor(timer.secondsLeft / 60).toString().padStart(2, "0");
   const seconds = Math.floor(timer.secondsLeft % 60).toString().padStart(2, "0");
   $("#timerDisplay").textContent = `${minutes}:${seconds}`;
   $("#focusTime").textContent = `${minutes}:${seconds}`;
-  const elapsed = Math.max(0, timer.totalSeconds - timer.secondsLeft);
+  const elapsed = getTimerElapsedSeconds();
   const pct = timer.totalSeconds ? Math.min(100, Math.round((elapsed / timer.totalSeconds) * 100)) : 0;
   $("#focusPercent").textContent = `${pct}%`;
   $("#focusProgressBar").style.width = `${pct}%`;
@@ -1181,6 +1210,66 @@ function toggleFocusPause() {
 
 function updateFocusControls() {
   $("#focusPause").textContent = timer.running ? "暂停" : "继续";
+}
+
+function tickTimer() {
+  updateTimerFromClock();
+  updateTimerDisplay();
+  saveTimerState();
+  if (timer.secondsLeft <= 0) completeTimer();
+}
+
+function updateTimerFromClock() {
+  if (!timer.active) return;
+  timer.secondsLeft = Math.max(0, timer.totalSeconds - getTimerElapsedSeconds());
+}
+
+function getTimerElapsedSeconds() {
+  const liveSeconds = timer.running && timer.startedAt ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0;
+  return Math.min(timer.totalSeconds, Math.max(0, Number(timer.pausedElapsedSeconds || 0) + liveSeconds));
+}
+
+function saveTimerState() {
+  if (!timer.active) {
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(
+    TIMER_STORAGE_KEY,
+    JSON.stringify({
+      secondsLeft: timer.secondsLeft,
+      totalSeconds: timer.totalSeconds,
+      running: timer.running,
+      active: timer.active,
+      startedAt: timer.startedAt,
+      pausedElapsedSeconds: timer.pausedElapsedSeconds,
+      projectId: timer.projectId,
+      taskId: timer.taskId,
+      notes: timer.notes
+    })
+  );
+}
+
+function restoreTimer() {
+  const raw = localStorage.getItem(TIMER_STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved.active || !saved.totalSeconds) return;
+    timer = {
+      ...timer,
+      ...saved,
+      interval: null
+    };
+    $("#focusNotes").value = timer.notes || "";
+    showFocusOverlay();
+    if (timer.running) {
+      timer.interval = setInterval(tickTimer, 1000);
+      tickTimer();
+    }
+  } catch {
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+  }
 }
 
 function timeToMinutes(time) {
@@ -1257,4 +1346,5 @@ bindEvents();
 renderCalendar();
 renderProjects();
 updateTimerDisplay();
+restoreTimer();
 hydrateStateFromServer();
