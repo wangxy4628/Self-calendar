@@ -1,6 +1,7 @@
 const API_BASE = window.location.origin;
 const STORAGE_KEY = "self-calendar-mvp";
 const SYNC_TOKEN_KEY = "self-calendar-sync-token";
+const TIMER_STORAGE_KEY = "self-calendar-mobile-timer";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -23,6 +24,9 @@ let timer = {
   totalSeconds: 25 * 60,
   interval: null,
   running: false,
+  active: false,
+  startedAt: null,
+  pausedElapsedSeconds: 0,
   projectId: "",
   taskId: "",
   notes: ""
@@ -450,33 +454,50 @@ function bindEvents() {
   $("#mobileFocusDiscard").addEventListener("click", () => stopMobileTimer(false));
   $("#mobileFocusNotes").addEventListener("input", (event) => {
     timer.notes = event.target.value;
+    saveTimerState();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && timer.active) tickMobileTimer();
+    if (document.visibilityState === "hidden") saveTimerState();
+  });
+  window.addEventListener("focus", () => {
+    if (timer.active) tickMobileTimer();
+  });
+  window.addEventListener("pageshow", () => {
+    if (timer.active) tickMobileTimer();
   });
 }
 
 bindEvents();
-loadState();
+loadState().then(restoreMobileTimer);
 
 function startMobileTimer() {
   if (timer.running) return;
-  if (!timer.interval) {
+  if (!timer.active) {
     timer.totalSeconds = Number($("#mobileTimerMinutes").value || 25) * 60;
     timer.secondsLeft = timer.totalSeconds;
     timer.projectId = $("#mobileTimerProject").value;
     timer.taskId = $("#mobileTimerTask").value;
+    timer.pausedElapsedSeconds = 0;
+    timer.notes = $("#mobileFocusNotes").value.trim();
+    timer.active = true;
   }
   showMobileFocus();
   timer.running = true;
-  timer.interval = setInterval(() => {
-    timer.secondsLeft -= 1;
-    updateMobileTimerDisplay();
-    if (timer.secondsLeft <= 0) stopMobileTimer(true);
-  }, 1000);
+  timer.startedAt = Date.now();
+  saveTimerState();
+  timer.interval = setInterval(tickMobileTimer, 1000);
+  tickMobileTimer();
 }
 
 function pauseMobileTimer() {
+  updateMobileTimerFromClock();
   clearInterval(timer.interval);
   timer.interval = null;
+  timer.pausedElapsedSeconds = getMobileTimerElapsedSeconds();
+  timer.startedAt = null;
   timer.running = false;
+  saveTimerState();
   updateMobileTimerDisplay();
 }
 
@@ -489,9 +510,11 @@ function toggleMobileTimer() {
 }
 
 function stopMobileTimer(saveElapsed) {
-  const elapsedSeconds = timer.totalSeconds - timer.secondsLeft;
+  updateMobileTimerFromClock();
+  const elapsedSeconds = getMobileTimerElapsedSeconds();
   timer.notes = $("#mobileFocusNotes").value.trim();
-  pauseMobileTimer();
+  clearInterval(timer.interval);
+  timer.interval = null;
   if (saveElapsed && elapsedSeconds > 0) {
     state.actual.push({
       id: id("e"),
@@ -506,11 +529,16 @@ function stopMobileTimer(saveElapsed) {
   }
   timer.secondsLeft = Number($("#mobileTimerMinutes").value || 25) * 60;
   timer.totalSeconds = timer.secondsLeft;
+  timer.active = false;
+  timer.running = false;
+  timer.startedAt = null;
+  timer.pausedElapsedSeconds = 0;
   timer.projectId = "";
   timer.taskId = "";
   timer.notes = "";
   $("#mobileFocusNotes").value = "";
   hideMobileFocus();
+  localStorage.removeItem(TIMER_STORAGE_KEY);
   saveState();
 }
 
@@ -528,13 +556,74 @@ function hideMobileFocus() {
 }
 
 function updateMobileTimerDisplay() {
+  updateMobileTimerFromClock();
   const minutes = Math.floor(timer.secondsLeft / 60).toString().padStart(2, "0");
   const seconds = Math.floor(timer.secondsLeft % 60).toString().padStart(2, "0");
-  const elapsed = Math.max(0, timer.totalSeconds - timer.secondsLeft);
+  const elapsed = getMobileTimerElapsedSeconds();
   const pct = timer.totalSeconds ? Math.min(100, Math.round((elapsed / timer.totalSeconds) * 100)) : 0;
   $("#mobileFocusTime").textContent = `${minutes}:${seconds}`;
   $("#mobileFocusPercent").textContent = `${pct}%`;
   $("#mobileFocusBar").style.width = `${pct}%`;
   $("#mobileFocusRing").style.setProperty("--focus-progress", `${pct}%`);
   $("#mobileFocusPause").textContent = timer.running ? "暂停" : "继续";
+}
+
+function tickMobileTimer() {
+  updateMobileTimerFromClock();
+  updateMobileTimerDisplay();
+  saveTimerState();
+  if (timer.secondsLeft <= 0) stopMobileTimer(true);
+}
+
+function updateMobileTimerFromClock() {
+  if (!timer.active) return;
+  timer.secondsLeft = Math.max(0, timer.totalSeconds - getMobileTimerElapsedSeconds());
+}
+
+function getMobileTimerElapsedSeconds() {
+  const liveSeconds = timer.running && timer.startedAt ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0;
+  return Math.min(timer.totalSeconds, Math.max(0, Number(timer.pausedElapsedSeconds || 0) + liveSeconds));
+}
+
+function saveTimerState() {
+  if (!timer.active) {
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(
+    TIMER_STORAGE_KEY,
+    JSON.stringify({
+      secondsLeft: timer.secondsLeft,
+      totalSeconds: timer.totalSeconds,
+      running: timer.running,
+      active: timer.active,
+      startedAt: timer.startedAt,
+      pausedElapsedSeconds: timer.pausedElapsedSeconds,
+      projectId: timer.projectId,
+      taskId: timer.taskId,
+      notes: timer.notes
+    })
+  );
+}
+
+function restoreMobileTimer() {
+  const raw = localStorage.getItem(TIMER_STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved.active || !saved.totalSeconds) return;
+    timer = {
+      ...timer,
+      ...saved,
+      interval: null
+    };
+    $("#mobileFocusNotes").value = timer.notes || "";
+    showMobileFocus();
+    if (timer.running) {
+      timer.interval = setInterval(tickMobileTimer, 1000);
+      tickMobileTimer();
+    }
+  } catch {
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+  }
 }
