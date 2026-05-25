@@ -1,6 +1,6 @@
 const STORAGE_KEY = "self-calendar-mvp";
 const SYNC_TOKEN_KEY = "self-calendar-sync-token";
-const API_BASE = "http://localhost:5173";
+const API_BASE = window.location.origin;
 
 const today = formatLocalDate(new Date());
 const seed = {
