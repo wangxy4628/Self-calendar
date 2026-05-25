@@ -17,6 +17,7 @@ let state = {
 };
 let syncStatus = "本地";
 let activeProjectId = "";
+let syncTimer = null;
 let timer = {
   secondsLeft: 25 * 60,
   totalSeconds: 25 * 60,
@@ -123,7 +124,24 @@ async function loadState() {
 }
 
 async function saveState() {
+  saveLocalState();
+  render();
+  await syncStateNow();
+}
+
+function saveLocalState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function syncStateSoon() {
+  saveLocalState();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncStateNow().then(render);
+  }, 350);
+}
+
+async function syncStateNow() {
   try {
     const response = await fetchState(`${API_BASE}/api/state`, {
       method: "POST",
@@ -135,7 +153,6 @@ async function saveState() {
   } catch {
     syncStatus = "本地";
   }
-  render();
 }
 
 async function fetchState(url, options = {}) {
@@ -325,9 +342,13 @@ function bindEvents() {
     });
   });
   document.body.addEventListener("click", (event) => {
-    if (event.target.dataset.date) {
-      state.selectedDate = event.target.dataset.date;
-      saveState();
+    const dateButton = event.target.closest("[data-date]");
+    if (dateButton) {
+      state.selectedDate = dateButton.dataset.date;
+      saveLocalState();
+      render();
+      syncStateSoon();
+      return;
     }
     const projectCard = event.target.closest("[data-project]");
     if (projectCard) {
