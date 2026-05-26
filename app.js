@@ -3,10 +3,13 @@ const SYNC_TOKEN_KEY = "self-calendar-sync-token";
 const TIMER_STORAGE_KEY = "self-calendar-desktop-timer";
 const API_BASE = window.location.origin;
 
-const today = formatLocalDate(new Date());
+let today = formatLocalDate(new Date());
 const seed = {
   selectedDate: today,
   calendarMode: "week",
+  habitMode: "day",
+  habitDate: today,
+  lastSeenToday: today,
   activeProjectId: "p1",
   projects: [
     {
@@ -34,6 +37,8 @@ const seed = {
     }
   ],
   planned: [],
+  habits: [],
+  habitLogs: [],
   actual: [
     {
       id: "e1",
@@ -85,17 +90,38 @@ function saveState() {
 function normalizeState(input) {
   const merged = { ...structuredClone(seed), ...input };
   merged.dailyReviews ||= {};
+  merged.habits ||= [];
+  merged.habitLogs ||= [];
+  merged.lastSeenToday ||= today;
   if (!["week", "month"].includes(merged.calendarMode)) {
     merged.calendarMode = "week";
   }
+  if (!["day", "week", "month"].includes(merged.habitMode)) {
+    merged.habitMode = "day";
+  }
   merged.projects = (merged.projects || []).map((project) => ({
     ...project,
+    estimate: Number.isFinite(Number(project.estimate)) && Number(project.estimate) > 0 ? Number(project.estimate) : null,
     tasks: project.tasks || [],
     aiMessages: project.aiMessages || []
   }));
   merged.planned ||= [];
   merged.actual ||= [];
+  applyTodayRollover(merged);
   return merged;
+}
+
+function applyTodayRollover(targetState = state) {
+  const nextToday = formatLocalDate(new Date());
+  const previousToday = targetState.lastSeenToday || today;
+  if (!targetState.selectedDate || (nextToday !== previousToday && targetState.selectedDate <= previousToday)) {
+    targetState.selectedDate = nextToday;
+  }
+  if (!targetState.habitDate || (nextToday !== previousToday && targetState.habitDate <= previousToday)) {
+    targetState.habitDate = nextToday;
+  }
+  targetState.lastSeenToday = nextToday;
+  today = nextToday;
 }
 
 async function hydrateStateFromServer() {
@@ -115,6 +141,7 @@ async function hydrateStateFromServer() {
     remoteSyncReady = true;
     renderCalendar();
     renderProjects();
+    renderHabits();
   } catch {
     remoteSyncReady = false;
     cloudSyncStatus = "本地";
@@ -170,6 +197,14 @@ function hours(value) {
   return `${rounded}h`;
 }
 
+function optionalHours(value) {
+  return Number(value) > 0 ? hours(value) : "不限";
+}
+
+function projectProgress(project) {
+  return Number(project?.estimate) > 0 ? Math.min(100, Math.round((invested(project.id) / Number(project.estimate)) * 100)) : 0;
+}
+
 function projectById(projectId) {
   return state.projects.find((project) => project.id === projectId);
 }
@@ -192,9 +227,18 @@ function invested(projectId) {
 
 function plannedDuration(block) {
   if (block.duration) return Number(block.duration);
+  if (!block.start || !block.end) return 0;
   const [sh, sm] = block.start.split(":").map(Number);
   const [eh, em] = block.end.split(":").map(Number);
   return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+}
+
+function planTimeLabel(block) {
+  return block.start && block.end ? `${block.start}-${block.end}` : "当天完成";
+}
+
+function plannedDurationLabel(block) {
+  return block.start && block.end ? hours(plannedDuration(block)) : "弹性";
 }
 
 function dateAdd(date, days) {
@@ -234,6 +278,7 @@ function setView(view) {
   $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#calendarView").classList.toggle("active-view", view === "calendar");
   $("#projectsView").classList.toggle("active-view", view === "projects");
+  $("#habitsView").classList.toggle("active-view", view === "habits");
 }
 
 function renderProjectOptions() {
@@ -300,7 +345,7 @@ function renderRangeCalendar() {
 }
 
 function renderDateCell(date) {
-  const planned = state.planned.filter((block) => block.date === date).sort((a, b) => a.start.localeCompare(b.start));
+  const planned = state.planned.filter((block) => block.date === date).sort((a, b) => (a.start || "99:99").localeCompare(b.start || "99:99"));
   const actual = state.actual.filter((entry) => entry.date === date);
   const plannedTotal = planned.reduce((sum, block) => sum + plannedDuration(block), 0);
   const actualTotal = actual.reduce((sum, entry) => sum + Number(entry.duration || 0), 0);
@@ -309,7 +354,7 @@ function renderDateCell(date) {
       <span class="date-cell-head">${formatDateShort(date)}</span>
       <span class="date-cell-total">计划 ${hours(plannedTotal)} / 实际 ${hours(actualTotal)}</span>
       <span class="date-cell-items">
-        ${planned.slice(0, 4).map((block) => `<span class="range-plan-item" data-range-plan="${block.id}" style="--family:${projectColor(block.projectId)}">${escapeHtml(block.start)} ${escapeHtml(block.title)}</span>`).join("")}
+        ${planned.slice(0, 4).map((block) => `<span class="range-plan-item" data-range-plan="${block.id}" style="--family:${projectColor(block.projectId)}">${escapeHtml(block.start || "当天")} ${escapeHtml(block.title)}</span>`).join("")}
         ${planned.length > 4 ? `<span>还有 ${planned.length - 4} 项</span>` : ""}
       </span>
     </button>
@@ -323,12 +368,12 @@ function renderPlannedEntry(block) {
     <article class="entry" style="--family:${projectColor(block.projectId)}">
       <div class="entry-title">
         <strong>${escapeHtml(block.title)}</strong>
-        <span>${hours(plannedDuration(block))}</span>
+        <span>${plannedDurationLabel(block)}</span>
       </div>
       <div class="entry-meta">
         <span>${escapeHtml(project?.name || "未匹配项目")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
-        <span>${block.start}-${block.end}</span>
+        <span>${planTimeLabel(block)}</span>
         <span>${escapeHtml(block.source || "manual")}</span>
       </div>
       ${block.notes ? `<p>${escapeHtml(block.notes)}</p>` : ""}
@@ -387,7 +432,7 @@ function renderProjects() {
   $("#projectList").innerHTML = state.projects
     .map((project) => {
       const done = invested(project.id);
-      const pct = project.estimate ? Math.min(100, Math.round((done / project.estimate) * 100)) : 0;
+      const pct = projectProgress(project);
       return `
         <article class="project-card ${state.activeProjectId === project.id ? "active" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
           <div class="project-card-title">
@@ -395,7 +440,7 @@ function renderProjects() {
             <span>${pct}%</span>
           </div>
           <div class="project-meta">
-            <span>${hours(done)} / ${hours(project.estimate)}</span>
+            <span>${Number(project.estimate) > 0 ? `${hours(done)} / ${hours(project.estimate)}` : `累计 ${hours(done)}`}</span>
             <span>${statusLabel(project.status)}</span>
           </div>
           <div class="progress"><span style="width: ${pct}%"></span></div>
@@ -406,6 +451,103 @@ function renderProjects() {
   renderProjectDetail();
 }
 
+function renderHabits() {
+  if (!$("#habitsView")) return;
+  state.habitDate ||= today;
+  $("#habitDate").value = state.habitDate;
+  $$(".habit-mode-button").forEach((button) => button.classList.toggle("active", button.dataset.habitMode === state.habitMode));
+  $("#habitTime").value ||= currentTimeValue();
+  $("#habitSelect").innerHTML = state.habits.length
+    ? state.habits.map((habit) => `<option value="${habit.id}">${escapeHtml(habit.name)}</option>`).join("")
+    : '<option value="">先输入一个新习惯</option>';
+  $("#habitList").innerHTML = state.habits.length
+    ? state.habits
+        .map((habit) => {
+          const count = state.habitLogs.filter((log) => log.habitId === habit.id).length;
+          return `<article class="habit-chip" style="--family:${habit.color}"><strong>${escapeHtml(habit.name)}</strong><span>${count} 次</span></article>`;
+        })
+        .join("")
+    : '<p class="empty-state">还没有习惯。输入名称后第一次打卡会自动创建。</p>';
+  const logs = habitLogsForMode();
+  $("#habitCount").textContent = `${logs.length} 次`;
+  $("#habitBoardTitle").textContent = habitBoardTitle();
+  $("#habitTimeline").innerHTML = renderHabitTimeline();
+}
+
+function habitLogsForMode() {
+  const dates = habitModeDates();
+  const dateSet = new Set(dates);
+  return state.habitLogs.filter((log) => dateSet.has(log.date));
+}
+
+function habitModeDates() {
+  if (state.habitMode === "week") return weekDates(state.habitDate);
+  if (state.habitMode === "month") return monthDates(state.habitDate);
+  return [state.habitDate];
+}
+
+function habitBoardTitle() {
+  if (state.habitMode === "day") return state.habitDate === today ? "今天" : state.habitDate;
+  const dates = habitModeDates();
+  return `${dates[0]} - ${dates.at(-1)}`;
+}
+
+function renderHabitTimeline() {
+  const dates = habitModeDates();
+  if (state.habitMode === "day") {
+    return `<div class="habit-day-axis">${renderHabitAxis(state.habitDate, true)}</div>`;
+  }
+  return `
+    <div class="habit-columns ${state.habitMode === "month" ? "habit-month-columns" : ""}">
+      ${dates
+        .map(
+          (date) => `
+            <div class="habit-column ${date === today ? "today" : ""}">
+              <span class="habit-column-label">${formatDateShort(date)}</span>
+              ${renderHabitAxis(date, false)}
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderHabitAxis(date, showLabels) {
+  const logs = state.habitLogs
+    .filter((log) => log.date === date)
+    .sort((a, b) => a.time.localeCompare(b.time));
+  return `
+    <div class="habit-axis">
+      ${showLabels ? Array.from({ length: 7 }, (_, index) => `<span class="habit-hour" style="top:${(index / 6) * 100}%">${String(index * 4).padStart(2, "0")}:00</span>`).join("") : ""}
+      ${logs.map(renderHabitStamp).join("")}
+    </div>
+  `;
+}
+
+function renderHabitStamp(log) {
+  const habit = state.habits.find((item) => item.id === log.habitId);
+  return `
+    <button class="habit-stamp" data-delete-habit-log="${log.id}" title="${escapeAttr(`${habit?.name || "习惯"} ${log.time}${log.notes ? ` · ${log.notes}` : ""}`)}" style="--stamp:${habit?.color || "var(--accent)"}; top:${timeToDayPercent(log.time)}%" type="button">
+      <span>${escapeHtml((habit?.name || "?").slice(0, 1))}</span>
+    </button>
+  `;
+}
+
+function timeToDayPercent(time) {
+  const [hour, minute] = (time || "00:00").split(":").map(Number);
+  return Math.min(98, Math.max(2, ((hour * 60 + minute) / 1440) * 100));
+}
+
+function currentTimeValue() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+function nextHabitColor() {
+  return ["#2563eb", "#0f766e", "#f59e0b", "#ec4899", "#7c3aed", "#c2410c", "#0891b2", "#4d7c0f"][state.habits.length % 8];
+}
+
 function renderProjectDetail() {
   const project = projectById(state.activeProjectId);
   if (!project) {
@@ -413,8 +555,8 @@ function renderProjectDetail() {
     return;
   }
   const done = invested(project.id);
-  const remaining = Math.max(0, Number(project.estimate) - done);
-  const pct = project.estimate ? Math.min(100, Math.round((done / project.estimate) * 100)) : 0;
+  const remaining = Number(project.estimate) > 0 ? Math.max(0, Number(project.estimate) - done) : null;
+  const pct = projectProgress(project);
   const entries = state.actual.filter((entry) => entry.projectId === project.id).slice(-5).reverse();
   const plans = state.planned.filter((entry) => entry.projectId === project.id).slice(-5).reverse();
   $("#projectDetail").innerHTML = `
@@ -426,9 +568,9 @@ function renderProjectDetail() {
       <button class="secondary danger" data-delete-project="${project.id}" type="button">删除</button>
     </div>
     <div class="stats">
-      <div class="stat"><span>预计</span><strong>${hours(project.estimate)}</strong></div>
+      <div class="stat"><span>预计</span><strong>${optionalHours(project.estimate)}</strong></div>
       <div class="stat"><span>已投入</span><strong>${hours(done)}</strong></div>
-      <div class="stat"><span>剩余</span><strong>${hours(remaining)}</strong></div>
+      <div class="stat"><span>剩余</span><strong>${remaining === null ? "持续累计" : hours(remaining)}</strong></div>
     </div>
     <div class="progress" aria-label="项目进度"><span style="width: ${pct}%"></span></div>
     <section class="ai-workbench">
@@ -588,7 +730,7 @@ function buildReviewContext(date) {
 function summarizePlanned(blocks) {
   return blocks.map((block) => ({
     date: block.date,
-    time: `${block.start}-${block.end}`,
+    time: planTimeLabel(block),
     duration: plannedDuration(block),
     project: projectById(block.projectId)?.name || "未匹配项目",
     task: taskById(block.projectId, block.taskId)?.name || "",
@@ -665,9 +807,11 @@ function fallbackDailyReview(context) {
 }
 
 function saveAndRender() {
+  applyTodayRollover();
   saveState();
   renderCalendar();
   renderProjects();
+  renderHabits();
 }
 
 async function generateTasks(project, instruction = "请生成第一版任务拆解。") {
@@ -720,10 +864,11 @@ function readTaskRow(row, existingTask = {}) {
 function fallbackGenerateTasks(project) {
   const phases = ["目标梳理与资料准备", "核心知识学习", "分阶段练习", "真实项目实践", "复盘、修正与收尾"];
   const weights = [0.12, 0.28, 0.24, 0.26, 0.1];
+  const totalEstimate = Number(project.estimate) > 0 ? Number(project.estimate) : 10;
   project.tasks = phases.map((phase, index) => ({
     id: id("t"),
     name: `${project.name} - ${phase}`,
-    estimate: Math.max(0.5, Math.round(project.estimate * weights[index] * 2) / 2),
+    estimate: Math.max(0.5, Math.round(totalEstimate * weights[index] * 2) / 2),
     notes: "",
     status: index === 0 ? "in-progress" : "not-started"
   }));
@@ -795,6 +940,7 @@ function findNextSlot(startDate, windows, preferredHours) {
 function firstFreeInWindow(date, start, end, preferredHours) {
   const existing = state.planned
     .filter((block) => block.date === date)
+    .filter((block) => block.start && block.end)
     .map((block) => [timeToMinutes(block.start), timeToMinutes(block.end)])
     .sort((a, b) => a[0] - b[0]);
   let cursor = timeToMinutes(start);
@@ -818,6 +964,7 @@ function makeSlot(date, startMinutes, durationMinutes) {
 }
 
 function normalizeTaskEstimates(project) {
+  if (!(Number(project.estimate) > 0)) return;
   const total = project.tasks.reduce((sum, task) => sum + Number(task.estimate), 0);
   const diff = Math.round((Number(project.estimate) - total) * 2) / 2;
   if (project.tasks.length && diff !== 0) {
@@ -829,12 +976,13 @@ function exportIcs() {
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Self Calendar//MVP//CN"];
   state.planned.forEach((block) => {
     const project = projectById(block.projectId);
+    const allDay = !block.start || !block.end;
     lines.push(
       "BEGIN:VEVENT",
       `UID:${block.id}@self-calendar`,
       `DTSTAMP:${toIcsDateTime(new Date())}`,
-      `DTSTART:${toLocalIcsDateTime(block.date, block.start)}`,
-      `DTEND:${toLocalIcsDateTime(block.date, block.end)}`,
+      allDay ? `DTSTART;VALUE=DATE:${block.date.replaceAll("-", "")}` : `DTSTART:${toLocalIcsDateTime(block.date, block.start)}`,
+      allDay ? `DTEND;VALUE=DATE:${dateAdd(block.date, 1).replaceAll("-", "")}` : `DTEND:${toLocalIcsDateTime(block.date, block.end)}`,
       `SUMMARY:${escapeIcs(`${project?.name || "Project"} - ${block.title}`)}`,
       `DESCRIPTION:${escapeIcs(block.notes || "")}`,
       "END:VEVENT"
@@ -886,8 +1034,18 @@ function bindEvents() {
       saveAndRender();
     });
   });
+  $$(".habit-mode-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.habitMode = button.dataset.habitMode;
+      saveAndRender();
+    });
+  });
   $("#selectedDate").addEventListener("change", (event) => {
     state.selectedDate = event.target.value;
+    saveAndRender();
+  });
+  $("#habitDate").addEventListener("change", (event) => {
+    state.habitDate = event.target.value;
     saveAndRender();
   });
   ["#planProject", "#actualProject", "#timerProject"].forEach((selector) => {
@@ -898,7 +1056,7 @@ function bindEvents() {
     const project = {
       id: id("p"),
       name: $("#projectName").value.trim(),
-      estimate: Number($("#projectEstimate").value),
+      estimate: $("#projectEstimate").value ? Number($("#projectEstimate").value) : null,
       status: $("#projectStatus").value,
       description: $("#projectDescription").value.trim(),
       createdAt: new Date().toISOString(),
@@ -935,6 +1093,27 @@ function bindEvents() {
     });
     event.target.reset();
   });
+  $("#habitForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const typedName = $("#habitName").value.trim();
+    let habit = typedName ? state.habits.find((item) => item.name === typedName) : state.habits.find((item) => item.id === $("#habitSelect").value);
+    if (!habit && typedName) {
+      habit = { id: id("h"), name: typedName, color: nextHabitColor(), createdAt: new Date().toISOString() };
+      state.habits.push(habit);
+    }
+    if (!habit) return;
+    state.habitLogs.push({
+      id: id("hl"),
+      habitId: habit.id,
+      date: state.habitDate || state.selectedDate || today,
+      time: $("#habitTime").value || currentTimeValue(),
+      notes: $("#habitNotes").value.trim()
+    });
+    $("#habitName").value = "";
+    $("#habitNotes").value = "";
+    $("#habitTime").value = currentTimeValue();
+    saveAndRender();
+  });
   document.body.addEventListener("submit", async (event) => {
     if (event.target.id === "manualTaskForm") {
       event.preventDefault();
@@ -968,7 +1147,7 @@ function bindEvents() {
       const block = state.planned.find((item) => item.id === rangePlan.dataset.rangePlan);
       if (block) {
         state.selectedDate = block.date;
-        const shouldDelete = window.confirm(`是否删除这个计划？\n\n${block.date} ${block.start}-${block.end}\n${block.title}`);
+        const shouldDelete = window.confirm(`是否删除这个计划？\n\n${block.date} ${planTimeLabel(block)}\n${block.title}`);
         if (shouldDelete) {
           state.planned = state.planned.filter((item) => item.id !== block.id);
         }
@@ -991,6 +1170,10 @@ function bindEvents() {
     }
     if (target.dataset.deleteActual) {
       state.actual = state.actual.filter((entry) => entry.id !== target.dataset.deleteActual);
+      saveAndRender();
+    }
+    if (target.dataset.deleteHabitLog) {
+      state.habitLogs = state.habitLogs.filter((log) => log.id !== target.dataset.deleteHabitLog);
       saveAndRender();
     }
     if (target.dataset.copyPlan) {
@@ -1345,6 +1528,12 @@ function statusLabel(status) {
 bindEvents();
 renderCalendar();
 renderProjects();
+renderHabits();
 updateTimerDisplay();
 restoreTimer();
 hydrateStateFromServer();
+setInterval(() => {
+  const previousToday = today;
+  applyTodayRollover();
+  if (today !== previousToday) saveAndRender();
+}, 60_000);

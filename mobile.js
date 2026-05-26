@@ -6,10 +6,11 @@ const TIMER_STORAGE_KEY = "self-calendar-mobile-timer";
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
-const today = formatLocalDate(new Date());
+let today = formatLocalDate(new Date());
 let state = {
   selectedDate: today,
   calendarMode: "week",
+  lastSeenToday: today,
   activeProjectId: "",
   projects: [],
   planned: [],
@@ -58,6 +59,10 @@ function hours(value) {
   return `${rounded}h`;
 }
 
+function optionalHours(value) {
+  return Number(value) > 0 ? hours(value) : "不限";
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -81,9 +86,18 @@ function projectColor(projectId) {
 }
 
 function plannedDuration(block) {
+  if (!block.start || !block.end) return 0;
   const [sh, sm] = block.start.split(":").map(Number);
   const [eh, em] = block.end.split(":").map(Number);
   return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+}
+
+function planTimeLabel(block) {
+  return block.start && block.end ? `${block.start}-${block.end}` : "当天完成";
+}
+
+function plannedDurationLabel(block) {
+  return block.start && block.end ? hours(plannedDuration(block)) : "弹性";
 }
 
 function invested(projectId) {
@@ -93,18 +107,32 @@ function invested(projectId) {
 }
 
 function normalizeState(input) {
-  return {
+  const normalized = {
     ...state,
     ...input,
     projects: (input.projects || []).map((project) => ({
       ...project,
+      estimate: Number.isFinite(Number(project.estimate)) && Number(project.estimate) > 0 ? Number(project.estimate) : null,
       tasks: project.tasks || [],
       aiMessages: project.aiMessages || []
     })),
     planned: input.planned || [],
     actual: input.actual || [],
-    dailyReviews: input.dailyReviews || {}
+    dailyReviews: input.dailyReviews || {},
+    lastSeenToday: input.lastSeenToday || today
   };
+  applyTodayRollover(normalized);
+  return normalized;
+}
+
+function applyTodayRollover(targetState = state) {
+  const nextToday = formatLocalDate(new Date());
+  const previousToday = targetState.lastSeenToday || today;
+  if (!targetState.selectedDate || (nextToday !== previousToday && targetState.selectedDate <= previousToday)) {
+    targetState.selectedDate = nextToday;
+  }
+  targetState.lastSeenToday = nextToday;
+  today = nextToday;
 }
 
 async function loadState() {
@@ -128,6 +156,7 @@ async function loadState() {
 }
 
 async function saveState() {
+  applyTodayRollover();
   saveLocalState();
   render();
   await syncStateNow();
@@ -242,8 +271,8 @@ function renderPlanItem(block) {
     <article class="mobile-item" style="--family:${projectColor(block.projectId)}">
       <strong>${escapeHtml(block.title)}</strong>
       <div class="mobile-meta">
-        <span>${block.start}-${block.end}</span>
-        <span>${hours(plannedDuration(block))}</span>
+        <span>${planTimeLabel(block)}</span>
+        <span>${plannedDurationLabel(block)}</span>
         <span>${escapeHtml(project?.name || "")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
       </div>
@@ -281,7 +310,7 @@ function renderProjectItem(project) {
     <article class="mobile-item project-mobile-item ${activeProjectId === project.id ? "active" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
       <strong>${escapeHtml(project.name)}</strong>
       <div class="mobile-meta">
-        <span>${hours(done)} / ${hours(project.estimate)}</span>
+        <span>${Number(project.estimate) > 0 ? `${hours(done)} / ${hours(project.estimate)}` : `累计 ${hours(done)}`}</span>
         <span>${project.tasks?.length || 0} 个任务</span>
       </div>
       <div class="progress"><span style="width:${pct}%"></span></div>
@@ -299,7 +328,7 @@ function renderProjectDetail() {
     <div class="section-head">
       <div>
         <h2>${escapeHtml(project.name)}</h2>
-        <p class="detail-subtitle">${hours(invested(project.id))} / ${hours(project.estimate)}</p>
+        <p class="detail-subtitle">${Number(project.estimate) > 0 ? `${hours(invested(project.id))} / ${hours(project.estimate)}` : `累计 ${hours(invested(project.id))}`}</p>
       </div>
     </div>
     <form id="mobileTaskForm" class="mobile-form">
@@ -420,7 +449,7 @@ function bindEvents() {
     state.projects.push({
       id: id("p"),
       name: $("#mobileProjectName").value.trim(),
-      estimate: Number($("#mobileProjectEstimate").value),
+      estimate: $("#mobileProjectEstimate").value ? Number($("#mobileProjectEstimate").value) : null,
       description: $("#mobileProjectDescription").value.trim(),
       status: "in-progress",
       createdAt: new Date().toISOString(),
@@ -470,6 +499,11 @@ function bindEvents() {
 
 bindEvents();
 loadState().then(restoreMobileTimer);
+setInterval(() => {
+  const previousToday = today;
+  applyTodayRollover();
+  if (today !== previousToday) saveState();
+}, 60_000);
 
 function startMobileTimer() {
   if (timer.running) return;

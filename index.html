@@ -22,6 +22,7 @@
         <nav class="nav" aria-label="主导航">
           <button class="nav-button active" data-view="calendar" type="button">日历</button>
           <button class="nav-button" data-view="projects" type="button">项目</button>
+          <button class="nav-button" data-view="habits" type="button">习惯</button>
         </nav>
         <section class="today-summary" aria-label="今日概览">
           <span>今日实际</span>
@@ -68,8 +69,8 @@
                 <select id="planTask" required></select>
                 <input id="planTitle" type="text" placeholder="计划标题，可留空使用任务名" />
                 <div class="inline-fields">
-                  <input id="planStart" type="time" required />
-                  <input id="planEnd" type="time" required />
+                  <input id="planStart" type="time" />
+                  <input id="planEnd" type="time" />
                 </div>
                 <textarea id="planNotes" placeholder="备注"></textarea>
                 <button type="submit">添加计划</button>
@@ -146,7 +147,7 @@
                 <form id="projectForm" class="form">
                   <input id="projectName" type="text" placeholder="项目名称" required />
                   <div class="inline-fields">
-                    <input id="projectEstimate" type="number" min="1" step="0.5" placeholder="预计总小时" required />
+                    <input id="projectEstimate" type="number" min="0" step="0.5" placeholder="预计总小时，可留空" />
                     <select id="projectStatus">
                       <option value="in-progress">进行中</option>
                       <option value="not-started">未开始</option>
@@ -164,6 +165,58 @@
 
             <article id="projectDetail" class="panel project-detail">
               <p class="empty-state">选择一个项目查看详情，或者先创建你的第一个目标。</p>
+            </article>
+          </section>
+        </section>
+
+        <section id="habitsView" class="view">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">习惯</p>
+              <h2>时间点打卡</h2>
+            </div>
+            <div class="calendar-tools">
+              <div class="segmented" aria-label="习惯视图">
+                <button class="habit-mode-button active" data-habit-mode="day" type="button">日</button>
+                <button class="habit-mode-button" data-habit-mode="week" type="button">周</button>
+                <button class="habit-mode-button" data-habit-mode="month" type="button">月</button>
+              </div>
+              <label class="date-picker">
+                <span>查看日期</span>
+                <input id="habitDate" type="date" />
+              </label>
+            </div>
+          </div>
+
+          <section class="habit-layout">
+            <article class="panel habit-control-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>打卡</h3>
+                  <p>选择已有习惯，或输入一个新习惯名。</p>
+                </div>
+              </div>
+              <form id="habitForm" class="form">
+                <select id="habitSelect"></select>
+                <input id="habitName" type="text" placeholder="新习惯名称，可留空使用上方选择" />
+                <div class="inline-fields">
+                  <input id="habitTime" type="time" />
+                  <input id="habitNotes" type="text" placeholder="备注" />
+                </div>
+                <button type="submit">打卡</button>
+              </form>
+              <div id="habitList" class="habit-list"></div>
+            </article>
+
+            <article class="panel habit-board-panel">
+              <div class="panel-head">
+                <div>
+                  <h3 id="habitBoardTitle">今天</h3>
+                  <p>圆点的位置代表打卡发生的时间。</p>
+                </div>
+                <strong id="habitCount">0 次</strong>
+              </div>
+              <div id="habitTimeline" class="habit-timeline-board"></div>
             </article>
           </section>
         </section>

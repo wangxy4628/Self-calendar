@@ -48,8 +48,8 @@
             <select id="mobilePlanTask" required></select>
             <input id="mobilePlanTitle" type="text" placeholder="计划标题，可留空" />
             <div class="two-col">
-              <input id="mobilePlanStart" type="time" required />
-              <input id="mobilePlanEnd" type="time" required />
+              <input id="mobilePlanStart" type="time" />
+              <input id="mobilePlanEnd" type="time" />
             </div>
             <textarea id="mobilePlanNotes" placeholder="备注"></textarea>
             <button type="submit">保存计划</button>
@@ -88,7 +88,7 @@
           </div>
           <form id="mobileProjectForm" class="mobile-form collapsed">
             <input id="mobileProjectName" type="text" placeholder="项目名称" required />
-            <input id="mobileProjectEstimate" type="number" min="1" step="0.5" placeholder="预计总小时" required />
+            <input id="mobileProjectEstimate" type="number" min="0" step="0.5" placeholder="预计总小时，可留空" />
             <textarea id="mobileProjectDescription" placeholder="描述"></textarea>
             <button type="submit">保存项目</button>
           </form>
