@@ -348,6 +348,7 @@ textarea {
   color: var(--ink);
   text-align: left;
   box-shadow: none;
+  cursor: pointer;
   transition:
     border-color 140ms ease,
     background-color 140ms ease,
@@ -369,6 +370,12 @@ textarea {
 .date-cell.selected {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.date-cell.drag-over {
+  border-color: var(--accent-2);
+  background: #eefaf7;
+  box-shadow: inset 0 0 0 2px rgba(15, 118, 110, 0.18), 0 12px 24px rgba(15, 118, 110, 0.12);
 }
 
 .date-cell-head {
@@ -405,12 +412,18 @@ textarea {
 
 .range-plan-item {
   cursor: pointer;
+  user-select: none;
 }
 
 .range-plan-item:hover {
   background: #d9eeeb;
   color: #0f4f4a;
   transform: translateX(2px);
+}
+
+.range-plan-item.dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
 }
 
 .project-layout {

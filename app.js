@@ -350,14 +350,14 @@ function renderDateCell(date) {
   const plannedTotal = planned.reduce((sum, block) => sum + plannedDuration(block), 0);
   const actualTotal = actual.reduce((sum, entry) => sum + Number(entry.duration || 0), 0);
   return `
-    <button class="date-cell ${date === state.selectedDate ? "selected" : ""}" data-select-date="${date}" type="button">
+    <article class="date-cell ${date === state.selectedDate ? "selected" : ""}" data-select-date="${date}">
       <span class="date-cell-head">${formatDateShort(date)}</span>
       <span class="date-cell-total">计划 ${hours(plannedTotal)} / 实际 ${hours(actualTotal)}</span>
       <span class="date-cell-items">
-        ${planned.slice(0, 4).map((block) => `<span class="range-plan-item" data-range-plan="${block.id}" style="--family:${projectColor(block.projectId)}">${escapeHtml(block.start || "当天")} ${escapeHtml(block.title)}</span>`).join("")}
+        ${planned.slice(0, 4).map((block) => `<span class="range-plan-item" draggable="true" data-range-plan="${block.id}" style="--family:${projectColor(block.projectId)}">${escapeHtml(block.start || "当天")} ${escapeHtml(block.title)}</span>`).join("")}
         ${planned.length > 4 ? `<span>还有 ${planned.length - 4} 项</span>` : ""}
       </span>
-    </button>
+    </article>
   `;
 }
 
@@ -1138,6 +1138,41 @@ function bindEvents() {
     const prompt = $("#aiPrompt").value.trim();
     if (!project || !prompt) return;
     await generateTasks(project, prompt);
+    saveAndRender();
+  });
+  document.body.addEventListener("dragstart", (event) => {
+    const planItem = event.target.closest("[data-range-plan]");
+    if (!planItem) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", planItem.dataset.rangePlan);
+    planItem.classList.add("dragging");
+  });
+  document.body.addEventListener("dragend", (event) => {
+    event.target.closest("[data-range-plan]")?.classList.remove("dragging");
+    $$(".date-cell.drag-over").forEach((cell) => cell.classList.remove("drag-over"));
+  });
+  document.body.addEventListener("dragover", (event) => {
+    const dateCell = event.target.closest("[data-select-date]");
+    if (!dateCell) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    dateCell.classList.add("drag-over");
+  });
+  document.body.addEventListener("dragleave", (event) => {
+    const dateCell = event.target.closest("[data-select-date]");
+    if (!dateCell || dateCell.contains(event.relatedTarget)) return;
+    dateCell.classList.remove("drag-over");
+  });
+  document.body.addEventListener("drop", (event) => {
+    const dateCell = event.target.closest("[data-select-date]");
+    if (!dateCell) return;
+    event.preventDefault();
+    dateCell.classList.remove("drag-over");
+    const planId = event.dataTransfer.getData("text/plain");
+    const block = state.planned.find((item) => item.id === planId);
+    if (!block || block.date === dateCell.dataset.selectDate) return;
+    block.date = dateCell.dataset.selectDate;
+    state.selectedDate = block.date;
     saveAndRender();
   });
   document.body.addEventListener("click", async (event) => {
