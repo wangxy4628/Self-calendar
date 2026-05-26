@@ -669,6 +669,13 @@ function reviewMessagesForDate(date) {
   return state.reviewMessages.filter((message) => message.date === date);
 }
 
+function appendProjectAssistantMessage(project, content = "") {
+  project.aiMessages ||= [];
+  const message = { role: "assistant", content, createdAt: new Date().toISOString() };
+  project.aiMessages.push(message);
+  return message;
+}
+
 function renderTasks(project) {
   if (!project.tasks?.length) return '<p class="empty-state">还没有任务拆解。</p>';
   return project.tasks
@@ -804,6 +811,95 @@ function answerReviewPrompt(date, prompt) {
     return `可以把这类时间继续如实记成“娱乐放松”或“分心干扰”。复盘时我会看它和计划状态的差距，不把它简单当失败，而是判断它是不是恢复、逃避，还是计划排得太硬。今天记录到的状态是：${tagText}。`;
   }
   return `我已经把这段对话保存到 ${date} 的复盘里了。当前可参考的状态分布是：${tagText}。后面接入实时 AI 后，这些历史复盘和记忆摘要会一起作为上下文。`;
+}
+
+async function streamProjectChat(project, prompt) {
+  project.aiMessages ||= [];
+  project.aiMessages.push({ role: "user", content: prompt, createdAt: new Date().toISOString() });
+  const assistant = appendProjectAssistantMessage(project, "");
+  renderProjects();
+  await streamSsePost(
+    `${API_BASE}/api/ai-project-chat-stream`,
+    {
+      project,
+      messages: project.aiMessages,
+      planned: state.planned.slice(-80),
+      actual: state.actual.slice(-80),
+      statusTags: state.statusTags,
+      aiMemory: state.aiMemory.slice(-20)
+    },
+    (text) => {
+      assistant.content += text;
+      renderProjects();
+    }
+  );
+  if (!assistant.content.trim()) assistant.content = "我这边没有收到 AI 回复。";
+}
+
+async function streamReviewChat(date, prompt) {
+  appendReviewUserMessage(date, prompt);
+  const assistant = {
+    id: id("rm"),
+    date,
+    role: "assistant",
+    content: "",
+    createdAt: new Date().toISOString()
+  };
+  state.reviewMessages.push(assistant);
+  renderDailyReview();
+  const context = buildReviewContext(date);
+  await streamSsePost(
+    `${API_BASE}/api/ai-review-chat-stream`,
+    {
+      ...context,
+      aiMemory: state.aiMemory.slice(-20),
+      messages: reviewMessagesForDate(date)
+    },
+    (text) => {
+      assistant.content += text;
+      renderDailyReview();
+    }
+  );
+  if (!assistant.content.trim()) assistant.content = answerReviewPrompt(date, prompt);
+}
+
+async function streamSsePost(url, body, onDelta) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok || !response.body) throw new Error("AI stream unavailable.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+    events.forEach((eventText) => {
+      const event = parseSseEvent(eventText);
+      if (event.event === "delta" && event.data?.text) onDelta(event.data.text);
+      if (event.event === "error") throw new Error(event.data?.error || "AI stream failed.");
+    });
+  }
+}
+
+function parseSseEvent(eventText) {
+  const event = { event: "message", data: null };
+  eventText.split(/\r?\n/).forEach((line) => {
+    if (line.startsWith("event:")) event.event = line.slice(6).trim();
+    if (line.startsWith("data:")) {
+      try {
+        event.data = JSON.parse(line.slice(5).trim());
+      } catch {
+        event.data = null;
+      }
+    }
+  });
+  return event;
 }
 
 function buildReviewContext(date) {
@@ -1309,16 +1405,41 @@ function bindEvents() {
     const project = projectById(state.activeProjectId);
     const prompt = $("#aiPrompt").value.trim();
     if (!project || !prompt) return;
-    await generateTasks(project, prompt);
+    $("#aiPrompt").value = "";
+    try {
+      await streamProjectChat(project, prompt);
+    } catch {
+      project.aiMessages ||= [];
+      if (!project.aiMessages.some((message) => message.role === "user" && message.content === prompt)) {
+        project.aiMessages.push({ role: "user", content: prompt, createdAt: new Date().toISOString() });
+      }
+      const last = project.aiMessages.at(-1);
+      if (last?.role === "assistant" && !last.content.trim()) {
+        last.content = "实时 AI 暂时连接失败，我先把你的问题保存下来。请检查豆包环境变量或稍后再试。";
+      } else {
+        project.aiMessages.push({ role: "assistant", content: "实时 AI 暂时连接失败，我先把你的问题保存下来。请检查豆包环境变量或稍后再试。", createdAt: new Date().toISOString() });
+      }
+    }
     saveAndRender();
   });
-  $("#reviewPromptForm").addEventListener("submit", (event) => {
+  $("#reviewPromptForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const prompt = $("#reviewPrompt").value.trim();
     if (!prompt) return;
-    appendReviewUserMessage(state.selectedDate, prompt);
-    appendReviewAssistantMessage(state.selectedDate, answerReviewPrompt(state.selectedDate, prompt));
     $("#reviewPrompt").value = "";
+    try {
+      await streamReviewChat(state.selectedDate, prompt);
+    } catch {
+      if (!reviewMessagesForDate(state.selectedDate).some((message) => message.role === "user" && message.content === prompt)) {
+        appendReviewUserMessage(state.selectedDate, prompt);
+      }
+      const last = reviewMessagesForDate(state.selectedDate).at(-1);
+      if (last?.role === "assistant" && !last.content.trim()) {
+        last.content = answerReviewPrompt(state.selectedDate, prompt);
+      } else {
+        appendReviewAssistantMessage(state.selectedDate, answerReviewPrompt(state.selectedDate, prompt));
+      }
+    }
     saveAndRender();
   });
   document.body.addEventListener("dragstart", (event) => {

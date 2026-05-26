@@ -30,6 +30,8 @@ const mimeTypes = {
 const routes = {
   "/api/ai-breakdown": handleAiBreakdown,
   "/api/ai-schedule": handleAiSchedule,
+  "/api/ai-project-chat-stream": handleProjectChatStream,
+  "/api/ai-review-chat-stream": handleReviewChatStream,
   "/api/daily-review": handleDailyReview,
   "/api/state": handleState
 };
@@ -168,6 +170,57 @@ async function handleDailyReview(req, res) {
     sendJson(res, 200, sanitizeReview(parsed, body.localMetrics));
   } catch (error) {
     sendJson(res, error.status || 500, { error: error.message || "Daily review failed." });
+  }
+}
+
+async function handleProjectChatStream(req, res) {
+  try {
+    const body = await readJson(req);
+    const system =
+      "你是 Self Calendar 里的项目助手。必须只使用简体中文。像 ChatGPT 一样用自然、简洁、具体的对话回复用户。" +
+      "你可以根据项目说明、已有任务、已有对话和日程上下文，帮助用户拆解任务、调整计划、解释取舍。" +
+      "这条流式回复只输出给用户看的自然语言，不要输出 JSON，不要 markdown 表格。";
+    const context = JSON.stringify({
+      project: body.project || {},
+      planned: body.planned || [],
+      actual: body.actual || [],
+      statusTags: body.statusTags || [],
+      aiMemory: body.aiMemory || []
+    });
+    const messages = [
+      { role: "system", content: system },
+      { role: "user", content: `上下文：${context}` },
+      ...(Array.isArray(body.messages) ? body.messages.slice(-16).map(normalizeChatMessage).filter(Boolean) : [])
+    ];
+    await streamDoubaoMessages(messages, res);
+  } catch (error) {
+    sendStreamError(res, error);
+  }
+}
+
+async function handleReviewChatStream(req, res) {
+  try {
+    const body = await readJson(req);
+    const system =
+      "你是 Self Calendar 里的每日复盘助手。必须只使用简体中文。请像 ChatGPT 一样实时对话，语气温和、具体、可执行。" +
+      "你能读取用户过去的记忆摘要、今天计划、今天实际、状态标签分布和未来计划。不要假装已经修改日历，只能提出建议或请用户确认。";
+    const context = JSON.stringify({
+      reviewDate: body.reviewDate,
+      todayPlanned: body.todayPlanned || [],
+      todayActual: body.todayActual || [],
+      statusSummary: body.statusSummary || {},
+      futurePlannedSummary: body.futurePlannedSummary || [],
+      projectSummary: body.projectSummary || [],
+      aiMemory: body.aiMemory || []
+    });
+    const messages = [
+      { role: "system", content: system },
+      { role: "user", content: `复盘上下文：${context}` },
+      ...(Array.isArray(body.messages) ? body.messages.slice(-20).map(normalizeChatMessage).filter(Boolean) : [])
+    ];
+    await streamDoubaoMessages(messages, res);
+  } catch (error) {
+    sendStreamError(res, error);
   }
 }
 
@@ -351,6 +404,84 @@ async function callDoubao(system, user) {
   }
 
   return parseJsonFromText(payload.choices?.[0]?.message?.content || "");
+}
+
+async function streamDoubaoMessages(messages, res) {
+  if (!doubaoApiKey || !doubaoModel) {
+    const error = new Error("DOUBAO_API_KEY and DOUBAO_MODEL are required for live AI streaming.");
+    error.status = 503;
+    throw error;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+
+  const completion = await fetch(doubaoUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${doubaoApiKey}`
+    },
+    body: JSON.stringify({
+      model: doubaoModel,
+      temperature: 0.45,
+      stream: true,
+      messages
+    })
+  });
+
+  if (!completion.ok) {
+    const detail = await completion.text();
+    sendSse(res, "error", { error: detail || "Doubao stream request failed." });
+    res.end();
+    return;
+  }
+
+  let buffer = "";
+  const decoder = new TextDecoder();
+  for await (const chunk of completion.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const payload = JSON.parse(data);
+        const delta = payload.choices?.[0]?.delta?.content || payload.choices?.[0]?.message?.content || "";
+        if (delta) sendSse(res, "delta", { text: delta });
+      } catch {
+        // Ignore malformed provider keepalive fragments.
+      }
+    }
+  }
+  sendSse(res, "done", {});
+  res.end();
+}
+
+function normalizeChatMessage(message) {
+  const role = message?.role === "assistant" ? "assistant" : message?.role === "user" ? "user" : "";
+  const content = String(message?.content || "").trim();
+  return role && content ? { role, content } : null;
+}
+
+function sendSse(res, event, payload) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function sendStreamError(res, error) {
+  if (!res.headersSent) {
+    res.writeHead(error.status || 500, { "Content-Type": "text/event-stream; charset=utf-8" });
+  }
+  sendSse(res, "error", { error: error.message || "AI stream failed." });
+  res.end();
 }
 
 function serveStatic(req, res) {
