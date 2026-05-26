@@ -11,6 +11,15 @@ let state = {
   selectedDate: today,
   calendarMode: "week",
   lastSeenToday: today,
+  statusTags: [
+    { id: "deep-focus", name: "深度专注" },
+    { id: "light-progress", name: "轻量推进" },
+    { id: "training", name: "体力训练" },
+    { id: "maintenance", name: "家务维护" },
+    { id: "recovery", name: "恢复休息" },
+    { id: "leisure", name: "娱乐放松" },
+    { id: "distraction", name: "分心干扰" }
+  ],
   activeProjectId: "",
   projects: [],
   planned: [],
@@ -85,6 +94,26 @@ function projectColor(projectId) {
   return ["#2563eb", "#0f766e", "#b45309", "#7c3aed", "#be123c", "#0891b2", "#4d7c0f", "#c2410c"][index % 8];
 }
 
+function statusTagName(tagId) {
+  return state.statusTags.find((tag) => tag.id === tagId)?.name || "未标记";
+}
+
+function renderStatusTagOptions(selected = "") {
+  return ['<option value="">状态标签</option>']
+    .concat(state.statusTags.map((tag) => `<option value="${tag.id}" ${tag.id === selected ? "selected" : ""}>${escapeHtml(tag.name)}</option>`))
+    .join("");
+}
+
+function inferStatusTag(task = {}, fallback = "light-progress") {
+  const text = `${task.name || ""} ${task.notes || ""}`.toLowerCase();
+  if (/训练|运动|引体|健身|跑|拉伸/.test(text)) return "training";
+  if (/休息|恢复|睡|散步|放松/.test(text)) return "recovery";
+  if (/游戏|娱乐|短视频|刷/.test(text)) return "leisure";
+  if (/整理|家务|维护|清洁/.test(text)) return "maintenance";
+  if (/写|编程|学习|研究|准备|设计|阅读/.test(text)) return "deep-focus";
+  return fallback;
+}
+
 function plannedDuration(block) {
   if (!block.start || !block.end) return 0;
   const [sh, sm] = block.start.split(":").map(Number);
@@ -119,6 +148,7 @@ function normalizeState(input) {
     planned: input.planned || [],
     actual: input.actual || [],
     dailyReviews: input.dailyReviews || {},
+    statusTags: Array.isArray(input.statusTags) && input.statusTags.length ? input.statusTags : state.statusTags,
     lastSeenToday: input.lastSeenToday || today
   };
   applyTodayRollover(normalized);
@@ -234,6 +264,12 @@ function renderOptions() {
     $(selector).innerHTML = projectOptions || '<option value="">先创建项目</option>';
     if (previous && state.projects.some((project) => project.id === previous)) $(selector).value = previous;
   });
+  ["#mobilePlanStatusTag", "#mobileActualStatusTag"].forEach((selector) => {
+    const element = $(selector);
+    if (!element) return;
+    const previous = element.value;
+    element.innerHTML = renderStatusTagOptions(previous);
+  });
   renderTaskOptions();
 }
 
@@ -275,6 +311,7 @@ function renderPlanItem(block) {
         <span>${plannedDurationLabel(block)}</span>
         <span>${escapeHtml(project?.name || "")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
+        ${block.statusTag ? `<span>${escapeHtml(statusTagName(block.statusTag))}</span>` : ""}
       </div>
     </article>
   `;
@@ -290,6 +327,7 @@ function renderActualItem(entry) {
         <span>${hours(entry.duration)}</span>
         <span>${escapeHtml(project?.name || "")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
+        ${entry.statusTag ? `<span>${escapeHtml(statusTagName(entry.statusTag))}</span>` : ""}
       </div>
     </article>
   `;
@@ -423,6 +461,7 @@ function bindEvents() {
       title: $("#mobilePlanTitle").value.trim() || taskById(projectId, taskId)?.name || "未命名计划",
       start: $("#mobilePlanStart").value,
       end: $("#mobilePlanEnd").value,
+      statusTag: $("#mobilePlanStatusTag").value,
       notes: $("#mobilePlanNotes").value.trim(),
       source: "手机计划"
     });
@@ -438,6 +477,7 @@ function bindEvents() {
       taskId: $("#mobileActualTask").value,
       title: $("#mobileActualTitle").value.trim(),
       duration: Number($("#mobileActualDuration").value),
+      statusTag: $("#mobileActualStatusTag").value,
       notes: $("#mobileActualNotes").value.trim(),
       source: "手机记录"
     });
@@ -557,6 +597,7 @@ function stopMobileTimer(saveElapsed) {
       taskId: timer.taskId || $("#mobileTimerTask").value,
       title: "番茄钟专注",
       duration: Math.round((elapsedSeconds / 3600) * 100) / 100,
+      statusTag: inferStatusTag(taskById(timer.projectId || $("#mobileTimerProject").value, timer.taskId || $("#mobileTimerTask").value)),
       notes: timer.notes || "由手机番茄钟自动记录。",
       source: "手机番茄钟"
     });

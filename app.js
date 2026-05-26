@@ -10,6 +10,15 @@ const seed = {
   habitMode: "day",
   habitDate: today,
   lastSeenToday: today,
+  statusTags: [
+    { id: "deep-focus", name: "深度专注", tone: "focus" },
+    { id: "light-progress", name: "轻量推进", tone: "calm" },
+    { id: "training", name: "体力训练", tone: "energy" },
+    { id: "maintenance", name: "家务维护", tone: "calm" },
+    { id: "recovery", name: "恢复休息", tone: "rest" },
+    { id: "leisure", name: "娱乐放松", tone: "play" },
+    { id: "distraction", name: "分心干扰", tone: "risk" }
+  ],
   activeProjectId: "p1",
   projects: [
     {
@@ -39,6 +48,8 @@ const seed = {
   planned: [],
   habits: [],
   habitLogs: [],
+  reviewMessages: [],
+  aiMemory: [],
   actual: [
     {
       id: "e1",
@@ -47,7 +58,8 @@ const seed = {
       title: "Watched basic syntax lessons",
       duration: 2,
       source: "手动记录",
-      notes: "变量、条件判断、循环。"
+      notes: "变量、条件判断、循环。",
+      statusTag: "deep-focus"
     }
   ],
   dailyReviews: {}
@@ -92,6 +104,9 @@ function normalizeState(input) {
   merged.dailyReviews ||= {};
   merged.habits ||= [];
   merged.habitLogs ||= [];
+  merged.reviewMessages ||= [];
+  merged.aiMemory ||= [];
+  merged.statusTags = Array.isArray(merged.statusTags) && merged.statusTags.length ? merged.statusTags : structuredClone(seed.statusTags);
   merged.lastSeenToday ||= today;
   if (!["week", "month"].includes(merged.calendarMode)) {
     merged.calendarMode = "week";
@@ -219,6 +234,30 @@ function projectColor(projectId) {
   return palette[index % palette.length];
 }
 
+function statusTagById(tagId) {
+  return state.statusTags.find((tag) => tag.id === tagId);
+}
+
+function statusTagName(tagId) {
+  return statusTagById(tagId)?.name || "未标记";
+}
+
+function renderStatusTagOptions(selected = "") {
+  return ['<option value="">状态标签</option>']
+    .concat(state.statusTags.map((tag) => `<option value="${tag.id}" ${tag.id === selected ? "selected" : ""}>${escapeHtml(tag.name)}</option>`))
+    .join("");
+}
+
+function inferStatusTag(task = {}, fallback = "light-progress") {
+  const text = `${task.name || ""} ${task.notes || ""}`.toLowerCase();
+  if (/训练|运动|引体|健身|跑|拉伸/.test(text)) return "training";
+  if (/休息|恢复|睡|散步|放松/.test(text)) return "recovery";
+  if (/游戏|娱乐|短视频|刷/.test(text)) return "leisure";
+  if (/整理|家务|维护|清洁/.test(text)) return "maintenance";
+  if (/写|编程|学习|研究|准备|设计|阅读/.test(text)) return "deep-focus";
+  return fallback;
+}
+
 function invested(projectId) {
   return state.actual
     .filter((entry) => entry.projectId === projectId)
@@ -289,6 +328,12 @@ function renderProjectOptions() {
     if (previous && state.projects.some((project) => project.id === previous)) {
       $(selector).value = previous;
     }
+  });
+  ["#planStatusTag", "#actualStatusTag"].forEach((selector) => {
+    const element = $(selector);
+    if (!element) return;
+    const previous = element.value;
+    element.innerHTML = renderStatusTagOptions(previous);
   });
   renderTaskOptions();
 }
@@ -374,6 +419,7 @@ function renderPlannedEntry(block) {
         <span>${escapeHtml(project?.name || "未匹配项目")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
         <span>${planTimeLabel(block)}</span>
+        ${block.statusTag ? `<span class="status-pill">${escapeHtml(statusTagName(block.statusTag))}</span>` : ""}
         <span>${escapeHtml(block.source || "manual")}</span>
       </div>
       ${block.notes ? `<p>${escapeHtml(block.notes)}</p>` : ""}
@@ -398,6 +444,7 @@ function renderActualEntry(entry) {
         <span>${escapeHtml(project?.name || "未匹配项目")}</span>
         ${task ? `<span>${escapeHtml(task.name)}</span>` : ""}
         <span>${escapeHtml(entry.source || "manual")}</span>
+        ${entry.statusTag ? `<span class="status-pill">${escapeHtml(statusTagName(entry.statusTag))}</span>` : ""}
       </div>
       ${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ""}
       <div class="entry-actions">
@@ -609,9 +656,17 @@ function renderAiMessages(project) {
   const messages = project.aiMessages || [];
   if (!messages.length) return '<p class="empty-state">还没有对话。先点“生成/重写”，或直接输入修改要求。</p>';
   return messages
-    .slice(-6)
-    .map((message) => `<p class="ai-message ${message.role}"><strong>${message.role === "user" ? "你" : "AI"}</strong>${escapeHtml(message.content)}</p>`)
+    .slice(-12)
+    .map(renderChatMessage)
     .join("");
+}
+
+function renderChatMessage(message) {
+  return `<p class="ai-message ${message.role}"><strong>${message.role === "user" ? "你" : "AI"}</strong>${escapeHtml(message.content)}</p>`;
+}
+
+function reviewMessagesForDate(date) {
+  return state.reviewMessages.filter((message) => message.date === date);
 }
 
 function renderTasks(project) {
@@ -648,20 +703,24 @@ function renderDailyReview() {
   const review = state.dailyReviews?.[state.selectedDate];
   if (!review) {
     $("#reviewResult").innerHTML = '<p class="empty-state">完成一天后，可以在这里生成复盘。</p>';
-    return;
+  } else {
+    $("#reviewResult").innerHTML = `
+      <div class="review-score">
+        <span>计划完成率</span>
+        <strong>${review.completionRate}%</strong>
+      </div>
+      <p>${escapeHtml(review.summary)}</p>
+      ${renderReviewList("做得不错", review.wins)}
+      ${renderReviewList("偏差与原因", review.gaps)}
+      ${renderReviewList("接下来风险", review.risks)}
+      ${renderAdjustments(review.adjustments)}
+      ${review.nextFocus ? `<p><strong>下一段重点：</strong>${escapeHtml(review.nextFocus)}</p>` : ""}
+    `;
   }
-  $("#reviewResult").innerHTML = `
-    <div class="review-score">
-      <span>计划完成率</span>
-      <strong>${review.completionRate}%</strong>
-    </div>
-    <p>${escapeHtml(review.summary)}</p>
-    ${renderReviewList("做得不错", review.wins)}
-    ${renderReviewList("偏差与原因", review.gaps)}
-    ${renderReviewList("接下来风险", review.risks)}
-    ${renderAdjustments(review.adjustments)}
-    ${review.nextFocus ? `<p><strong>下一段重点：</strong>${escapeHtml(review.nextFocus)}</p>` : ""}
-  `;
+  const messages = reviewMessagesForDate(state.selectedDate);
+  $("#reviewMessages").innerHTML = messages.length
+    ? messages.map(renderChatMessage).join("")
+    : '<p class="empty-state">复盘对话会保存在这里，第二天可以继续接着聊。</p>';
 }
 
 function renderReviewList(title, items) {
@@ -702,6 +761,49 @@ async function runDailyReview() {
   const review = aiReview || fallbackDailyReview(context);
   state.dailyReviews ||= {};
   state.dailyReviews[state.selectedDate] = review;
+  appendReviewAssistantMessage(state.selectedDate, review.summary);
+  rememberReview(state.selectedDate, review, context);
+}
+
+function appendReviewAssistantMessage(date, content) {
+  state.reviewMessages.push({
+    id: id("rm"),
+    date,
+    role: "assistant",
+    content,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function appendReviewUserMessage(date, content) {
+  state.reviewMessages.push({
+    id: id("rm"),
+    date,
+    role: "user",
+    content,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function rememberReview(date, review, context) {
+  const actualByTag = context.statusSummary.actual.map((item) => `${item.tag} ${hours(item.hours)}`).join("，") || "暂无实际投入";
+  const memory = `${date}：计划 ${hours(context.localMetrics.plannedHours)}，实际 ${hours(context.localMetrics.actualHours)}，完成率 ${review.completionRate}%。状态分布：${actualByTag}。下一段重点：${review.nextFocus || "保持记录。"}`;
+  state.aiMemory = state.aiMemory.filter((item) => item.date !== date);
+  state.aiMemory.push({ id: id("mem"), date, content: memory, createdAt: new Date().toISOString() });
+  state.aiMemory = state.aiMemory.slice(-30);
+}
+
+function answerReviewPrompt(date, prompt) {
+  const context = buildReviewContext(date);
+  const memoryText = context.recentMemory.map((item) => item.content).slice(-5).join("\n");
+  const tagText = context.statusSummary.actual.map((item) => `${item.tag} ${hours(item.hours)}`).join("，") || "今天还没有实际状态标签";
+  if (/明天|调整|安排|计划/.test(prompt)) {
+    return `我会参考最近记忆来调：${memoryText ? `\n${memoryText}\n` : ""}今天的实际状态是 ${tagText}。建议明天先保留 1-2 个最重要块，把“深度专注”放在精力最高的时段；如果今天娱乐/分心偏多，就不要用惩罚式补偿，把下一段计划切小一点。`;
+  }
+  if (/游戏|娱乐|分心|拖延/.test(prompt)) {
+    return `可以把这类时间继续如实记成“娱乐放松”或“分心干扰”。复盘时我会看它和计划状态的差距，不把它简单当失败，而是判断它是不是恢复、逃避，还是计划排得太硬。今天记录到的状态是：${tagText}。`;
+  }
+  return `我已经把这段对话保存到 ${date} 的复盘里了。当前可参考的状态分布是：${tagText}。后面接入实时 AI 后，这些历史复盘和记忆摘要会一起作为上下文。`;
 }
 
 function buildReviewContext(date) {
@@ -717,6 +819,9 @@ function buildReviewContext(date) {
     pastActualSummary: summarizePastActual(date, 7),
     futurePlannedSummary: summarizeFuturePlanned(date, 7),
     projectSummary: summarizeProjects(),
+    statusSummary: summarizeStatusTags(todayPlanned, todayActual),
+    recentMemory: state.aiMemory.slice(-10),
+    recentReviewMessages: state.reviewMessages.slice(-20),
     localMetrics: {
       plannedHours,
       actualHours,
@@ -734,6 +839,7 @@ function summarizePlanned(blocks) {
     duration: plannedDuration(block),
     project: projectById(block.projectId)?.name || "未匹配项目",
     task: taskById(block.projectId, block.taskId)?.name || "",
+    statusTag: statusTagName(block.statusTag),
     title: block.title,
     notes: block.notes || ""
   }));
@@ -746,9 +852,26 @@ function summarizeActual(entries) {
     project: projectById(entry.projectId)?.name || "未匹配项目",
     task: taskById(entry.projectId, entry.taskId)?.name || "",
     title: entry.title,
+    statusTag: statusTagName(entry.statusTag),
     source: entry.source || "手动记录",
     notes: entry.notes || ""
   }));
+}
+
+function summarizeStatusTags(plannedBlocks, actualEntries) {
+  return {
+    planned: summarizeTagHours(plannedBlocks, plannedDuration),
+    actual: summarizeTagHours(actualEntries, (entry) => Number(entry.duration || 0))
+  };
+}
+
+function summarizeTagHours(items, durationGetter) {
+  const totals = new Map();
+  items.forEach((item) => {
+    const label = statusTagName(item.statusTag);
+    totals.set(label, Math.round(((totals.get(label) || 0) + durationGetter(item)) * 10) / 10);
+  });
+  return Array.from(totals.entries()).map(([tag, hoursValue]) => ({ tag, hours: hoursValue }));
 }
 
 function summarizePastActual(date, days) {
@@ -790,7 +913,17 @@ function summarizeProjects() {
 }
 
 async function requestDailyReview(context) {
-  return null;
+  try {
+    const response = await fetch(`${API_BASE}/api/daily-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(context)
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 function fallbackDailyReview(context) {
@@ -836,7 +969,24 @@ async function generateTasks(project, instruction = "请生成第一版任务拆
 }
 
 async function requestAiTasks(project, instruction) {
-  return { tasks: [], reply: "" };
+  try {
+    const response = await fetch(`${API_BASE}/api/ai-breakdown`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: project.name,
+        description: project.description || "",
+        estimate: Number(project.estimate) || 10,
+        tasks: project.tasks || [],
+        messages: project.aiMessages || [],
+        instruction
+      })
+    });
+    if (!response.ok) return { tasks: [], reply: "" };
+    return await response.json();
+  } catch {
+    return { tasks: [], reply: "" };
+  }
 }
 
 function collectTaskDraft() {
@@ -889,6 +1039,7 @@ async function scheduleProjectTasks(project) {
       title: block.title,
       projectId: project.id,
       taskId: block.taskId || tasks.find((task) => task.name === block.title)?.id || "",
+      statusTag: block.statusTag || inferStatusTag(tasks.find((task) => task.id === block.taskId || task.name === block.title)),
       notes: block.notes || "",
       source: aiBlocks.length ? "AI 智能排程" : "本地规则排程"
     });
@@ -897,7 +1048,25 @@ async function scheduleProjectTasks(project) {
 }
 
 async function requestAiSchedule(project, tasks) {
-  return [];
+  try {
+    const response = await fetch(`${API_BASE}/api/ai-schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project,
+        tasks,
+        existingPlanned: state.planned.slice(-80),
+        startDate: state.selectedDate,
+        horizonDays: 14,
+        preferences: "优先安排在 09:00-12:00 和 14:00-18:00。每个计划块附带合适的状态标签。"
+      })
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data.blocks) ? data.blocks : [];
+  } catch {
+    return [];
+  }
 }
 
 function fallbackSchedule(tasks) {
@@ -917,6 +1086,7 @@ function fallbackSchedule(tasks) {
         end: slot.end,
         taskId: task.id,
         title: task.name,
+        statusTag: inferStatusTag(task),
         notes: task.notes || ""
       });
       remaining = Math.round((remaining - slot.duration) * 10) / 10;
@@ -1077,6 +1247,7 @@ function bindEvents() {
       title: $("#planTitle").value.trim() || taskById($("#planProject").value, $("#planTask").value)?.name || "未命名计划",
       start: $("#planStart").value,
       end: $("#planEnd").value,
+      statusTag: $("#planStatusTag").value,
       notes: $("#planNotes").value.trim()
     });
     event.target.reset();
@@ -1089,6 +1260,7 @@ function bindEvents() {
       taskId: $("#actualTask").value,
       title: $("#actualTitle").value.trim(),
       duration: Number($("#actualDuration").value),
+      statusTag: $("#actualStatusTag").value,
       notes: $("#actualNotes").value.trim()
     });
     event.target.reset();
@@ -1138,6 +1310,15 @@ function bindEvents() {
     const prompt = $("#aiPrompt").value.trim();
     if (!project || !prompt) return;
     await generateTasks(project, prompt);
+    saveAndRender();
+  });
+  $("#reviewPromptForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const prompt = $("#reviewPrompt").value.trim();
+    if (!prompt) return;
+    appendReviewUserMessage(state.selectedDate, prompt);
+    appendReviewAssistantMessage(state.selectedDate, answerReviewPrompt(state.selectedDate, prompt));
+    $("#reviewPrompt").value = "";
     saveAndRender();
   });
   document.body.addEventListener("dragstart", (event) => {
@@ -1220,6 +1401,7 @@ function bindEvents() {
           taskId: block.taskId,
           title: block.title,
           duration: plannedDuration(block),
+          statusTag: block.statusTag,
           source: "由计划转为实际",
           notes: block.notes
         });
@@ -1366,6 +1548,7 @@ function stopTimer(saveElapsed = true) {
       taskId: timer.taskId || $("#timerTask").value,
       title: "番茄钟专注",
       duration: Math.round((elapsedSeconds / 3600) * 100) / 100,
+      statusTag: inferStatusTag(taskById(timer.projectId || $("#timerProject").value, timer.taskId || $("#timerTask").value)),
       source: "pomodoro",
       notes: timer.notes || "由番茄钟自动记录。"
     });

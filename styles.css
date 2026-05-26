@@ -559,6 +559,14 @@ textarea {
   font-size: 14px;
 }
 
+.status-pill {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: var(--accent);
+  font-weight: 800;
+}
+
 .entry-actions,
 .header-actions,
 .timer-controls,
@@ -932,15 +940,26 @@ textarea {
   border-radius: 8px;
   background: #fff;
   border: 1px solid var(--line);
+  max-width: 82%;
 }
 
 .ai-message.user {
+  justify-self: end;
   background: #eef4ff;
+}
+
+.ai-message.assistant {
+  justify-self: start;
 }
 
 .ai-message strong {
   font-size: 12px;
   color: var(--muted);
+}
+
+.review-messages {
+  max-height: 280px;
+  margin-top: 14px;
 }
 
 .ai-prompt {

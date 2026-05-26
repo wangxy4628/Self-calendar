@@ -67,6 +67,7 @@
               <form id="planForm" class="form compact-form">
                 <select id="planProject" required></select>
                 <select id="planTask" required></select>
+                <select id="planStatusTag"></select>
                 <input id="planTitle" type="text" placeholder="计划标题，可留空使用任务名" />
                 <div class="inline-fields">
                   <input id="planStart" type="time" />
@@ -90,6 +91,7 @@
               <form id="actualForm" class="form compact-form">
                 <select id="actualProject" required></select>
                 <select id="actualTask"></select>
+                <select id="actualStatusTag"></select>
                 <input id="actualTitle" type="text" placeholder="做了什么" required />
                 <input id="actualDuration" type="number" min="0.1" step="0.1" placeholder="小时" required />
                 <textarea id="actualNotes" placeholder="备注"></textarea>
@@ -122,6 +124,11 @@
             <div id="reviewResult" class="review-result">
               <p class="empty-state">完成一天后，可以在这里生成复盘。</p>
             </div>
+            <div id="reviewMessages" class="ai-messages review-messages"></div>
+            <form id="reviewPromptForm" class="ai-prompt">
+              <input id="reviewPrompt" type="text" placeholder="继续和复盘助手聊：比如，明天要不要调整计划？" />
+              <button type="submit">发送</button>
+            </form>
           </section>
         </section>
 
