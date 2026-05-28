@@ -869,10 +869,11 @@ async function streamSsePost(url, body, onDelta) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!response.ok || !response.body) throw new Error("AI stream unavailable.");
+  if (!response.body) throw new Error("AI stream unavailable.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let streamError = null;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -882,9 +883,11 @@ async function streamSsePost(url, body, onDelta) {
     events.forEach((eventText) => {
       const event = parseSseEvent(eventText);
       if (event.event === "delta" && event.data?.text) onDelta(event.data.text);
-      if (event.event === "error") throw new Error(event.data?.error || "AI stream failed.");
+      if (event.event === "error") streamError = event.data?.error || "AI stream failed.";
     });
+    if (streamError) throw new Error(streamError);
   }
+  if (!response.ok) throw new Error(streamError || "AI stream unavailable.");
 }
 
 function parseSseEvent(eventText) {
@@ -1408,16 +1411,17 @@ function bindEvents() {
     $("#aiPrompt").value = "";
     try {
       await streamProjectChat(project, prompt);
-    } catch {
+    } catch (error) {
       project.aiMessages ||= [];
       if (!project.aiMessages.some((message) => message.role === "user" && message.content === prompt)) {
         project.aiMessages.push({ role: "user", content: prompt, createdAt: new Date().toISOString() });
       }
       const last = project.aiMessages.at(-1);
+      const detail = error.message ? `（${error.message}）` : "";
       if (last?.role === "assistant" && !last.content.trim()) {
-        last.content = "实时 AI 暂时连接失败，我先把你的问题保存下来。请检查豆包环境变量或稍后再试。";
+        last.content = `实时 AI 暂时连接失败${detail}。我先把你的问题保存下来。请检查豆包环境变量或稍后再试。`;
       } else {
-        project.aiMessages.push({ role: "assistant", content: "实时 AI 暂时连接失败，我先把你的问题保存下来。请检查豆包环境变量或稍后再试。", createdAt: new Date().toISOString() });
+        project.aiMessages.push({ role: "assistant", content: `实时 AI 暂时连接失败${detail}。我先把你的问题保存下来。请检查豆包环境变量或稍后再试。`, createdAt: new Date().toISOString() });
       }
     }
     saveAndRender();
@@ -1429,15 +1433,15 @@ function bindEvents() {
     $("#reviewPrompt").value = "";
     try {
       await streamReviewChat(state.selectedDate, prompt);
-    } catch {
+    } catch (error) {
       if (!reviewMessagesForDate(state.selectedDate).some((message) => message.role === "user" && message.content === prompt)) {
         appendReviewUserMessage(state.selectedDate, prompt);
       }
       const last = reviewMessagesForDate(state.selectedDate).at(-1);
       if (last?.role === "assistant" && !last.content.trim()) {
-        last.content = answerReviewPrompt(state.selectedDate, prompt);
+        last.content = `实时 AI 暂时连接失败${error.message ? `（${error.message}）` : ""}。` + answerReviewPrompt(state.selectedDate, prompt);
       } else {
-        appendReviewAssistantMessage(state.selectedDate, answerReviewPrompt(state.selectedDate, prompt));
+        appendReviewAssistantMessage(state.selectedDate, `实时 AI 暂时连接失败${error.message ? `（${error.message}）` : ""}。` + answerReviewPrompt(state.selectedDate, prompt));
       }
     }
     saveAndRender();
