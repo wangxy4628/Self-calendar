@@ -68,6 +68,7 @@ const seed = {
 let state = loadState();
 let remoteSyncReady = false;
 let cloudSyncStatus = "本地";
+let aiUsageToday = null;
 let timer = {
   secondsLeft: 25 * 60,
   totalSeconds: 25 * 60,
@@ -201,6 +202,36 @@ async function fetchState(url, options = {}) {
   headers["X-Sync-Token"] = nextToken.trim();
   response = await fetch(url, { ...options, headers });
   return response;
+}
+
+async function loadAiUsage() {
+  try {
+    const response = await fetch(`${API_BASE}/api/ai-usage`);
+    if (!response.ok) return;
+    const data = await response.json();
+    aiUsageToday = data.today || null;
+    renderAiUsage();
+  } catch {
+    aiUsageToday = null;
+    renderAiUsage();
+  }
+}
+
+function renderAiUsage() {
+  const element = $("#aiUsageToday");
+  if (!element) return;
+  if (!aiUsageToday) {
+    element.textContent = "--";
+    return;
+  }
+  const total = Number(aiUsageToday.totalTokens || 0);
+  const estimated = Number(aiUsageToday.estimatedTokens || 0) > 0;
+  element.textContent = `${formatNumber(total)}${estimated ? "~" : ""}`;
+  element.title = `输入 ${formatNumber(aiUsageToday.promptTokens || 0)} / 输出 ${formatNumber(aiUsageToday.completionTokens || 0)} / 请求 ${aiUsageToday.requests || 0}`;
+}
+
+function formatNumber(value) {
+  return Math.round(Number(value || 0)).toLocaleString("zh-CN");
 }
 
 function id(prefix) {
@@ -371,6 +402,7 @@ function renderCalendar() {
   );
   $("#activeProjects").textContent = state.projects.filter((project) => project.status === "in-progress").length;
   $("#syncStatus").textContent = cloudSyncStatus;
+  renderAiUsage();
 
   $("#plannedList").innerHTML = planned.length ? planned.map(renderPlannedEntry).join("") : $("#emptyTemplate").innerHTML;
   $("#actualList").innerHTML = actual.length ? actual.map(renderActualEntry).join("") : $("#emptyTemplate").innerHTML;
@@ -833,6 +865,7 @@ async function streamProjectChat(project, prompt) {
       renderProjects();
     }
   );
+  loadAiUsage();
   if (!assistant.content.trim()) assistant.content = "我这边没有收到 AI 回复。";
 }
 
@@ -860,6 +893,7 @@ async function streamReviewChat(date, prompt) {
       renderDailyReview();
     }
   );
+  loadAiUsage();
   if (!assistant.content.trim()) assistant.content = answerReviewPrompt(date, prompt);
 }
 
@@ -1019,7 +1053,9 @@ async function requestDailyReview(context) {
       body: JSON.stringify(context)
     });
     if (!response.ok) return null;
-    return await response.json();
+    const payload = await response.json();
+    loadAiUsage();
+    return payload;
   } catch {
     return null;
   }
@@ -1082,7 +1118,9 @@ async function requestAiTasks(project, instruction) {
       })
     });
     if (!response.ok) return { tasks: [], reply: "" };
-    return await response.json();
+    const payload = await response.json();
+    loadAiUsage();
+    return payload;
   } catch {
     return { tasks: [], reply: "" };
   }
@@ -1162,6 +1200,7 @@ async function requestAiSchedule(project, tasks) {
     });
     if (!response.ok) return [];
     const data = await response.json();
+    loadAiUsage();
     return Array.isArray(data.blocks) ? data.blocks : [];
   } catch {
     return [];
@@ -1875,8 +1914,10 @@ renderHabits();
 updateTimerDisplay();
 restoreTimer();
 hydrateStateFromServer();
+loadAiUsage();
 setInterval(() => {
   const previousToday = today;
   applyTodayRollover();
   if (today !== previousToday) saveAndRender();
 }, 60_000);
+setInterval(loadAiUsage, 60_000);

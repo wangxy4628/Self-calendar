@@ -11,6 +11,7 @@ const doubaoModel = process.env.DOUBAO_MODEL || process.env.ARK_MODEL || "";
 const doubaoUrl = process.env.DOUBAO_URL || "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
 const dataDir = path.join(root, "data");
 const stateFile = path.join(dataDir, "state.json");
+const usageFile = path.join(dataDir, "ai-usage.json");
 const supabaseUrl = normalizeSupabaseUrl(process.env.SUPABASE_URL || "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const supabaseTable = process.env.SUPABASE_STATE_TABLE || "self_calendar_state";
@@ -32,6 +33,7 @@ const routes = {
   "/api/ai-schedule": handleAiSchedule,
   "/api/ai-project-chat-stream": handleProjectChatStream,
   "/api/ai-review-chat-stream": handleReviewChatStream,
+  "/api/ai-usage": handleAiUsage,
   "/api/daily-review": handleDailyReview,
   "/api/state": handleState
 };
@@ -224,6 +226,19 @@ async function handleReviewChatStream(req, res) {
   }
 }
 
+async function handleAiUsage(req, res) {
+  if (req.method !== "GET") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+  const usage = readAiUsage();
+  const todayKey = localDateKey();
+  sendJson(res, 200, {
+    date: todayKey,
+    today: usage[todayKey] || emptyUsageBucket()
+  });
+}
+
 async function handleState(req, res) {
   try {
     if (!isStateRequestAuthorized(req)) {
@@ -403,6 +418,7 @@ async function callDoubao(system, user) {
     throw error;
   }
 
+  recordAiUsage(payload.usage, "json");
   return parseJsonFromText(payload.choices?.[0]?.message?.content || "");
 }
 
@@ -420,6 +436,9 @@ async function streamDoubaoMessages(messages, res) {
     "X-Accel-Buffering": "no"
   });
 
+  const promptEstimate = estimateMessagesTokens(messages);
+  let streamedText = "";
+  let streamUsage = null;
   const completion = await fetch(doubaoUrl, {
     method: "POST",
     headers: {
@@ -430,6 +449,7 @@ async function streamDoubaoMessages(messages, res) {
       model: doubaoModel,
       temperature: 0.45,
       stream: true,
+      stream_options: { include_usage: true },
       messages
     })
   });
@@ -454,13 +474,18 @@ async function streamDoubaoMessages(messages, res) {
       if (!data || data === "[DONE]") continue;
       try {
         const payload = JSON.parse(data);
+        if (payload.usage) streamUsage = payload.usage;
         const delta = payload.choices?.[0]?.delta?.content || payload.choices?.[0]?.message?.content || "";
-        if (delta) sendSse(res, "delta", { text: delta });
+        if (delta) {
+          streamedText += delta;
+          sendSse(res, "delta", { text: delta });
+        }
       } catch {
         // Ignore malformed provider keepalive fragments.
       }
     }
   }
+  recordAiUsage(streamUsage || estimateUsage(promptEstimate, streamedText), "stream");
   sendSse(res, "done", {});
   res.end();
 }
@@ -482,6 +507,85 @@ function sendStreamError(res, error) {
   }
   sendSse(res, "error", { error: error.message || "AI stream failed." });
   res.end();
+}
+
+function readAiUsage() {
+  if (!fs.existsSync(usageFile)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(usageFile, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeAiUsage(usage) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(usageFile, JSON.stringify(usage, null, 2), "utf8");
+}
+
+function emptyUsageBucket() {
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    requests: 0,
+    estimatedTokens: 0
+  };
+}
+
+function recordAiUsage(rawUsage, source) {
+  const normalized = normalizeUsage(rawUsage);
+  if (!normalized.totalTokens) return;
+  const usage = readAiUsage();
+  const todayKey = localDateKey();
+  const bucket = { ...emptyUsageBucket(), ...(usage[todayKey] || {}) };
+  bucket.promptTokens += normalized.promptTokens;
+  bucket.completionTokens += normalized.completionTokens;
+  bucket.totalTokens += normalized.totalTokens;
+  bucket.requests += 1;
+  bucket.estimatedTokens += normalized.estimated ? normalized.totalTokens : 0;
+  bucket.lastSource = source;
+  bucket.updatedAt = new Date().toISOString();
+  usage[todayKey] = bucket;
+  writeAiUsage(usage);
+}
+
+function normalizeUsage(usage = {}) {
+  const promptTokens = Number(usage.prompt_tokens ?? usage.promptTokens ?? usage.input_tokens ?? usage.inputTokens ?? 0);
+  const completionTokens = Number(usage.completion_tokens ?? usage.completionTokens ?? usage.output_tokens ?? usage.outputTokens ?? 0);
+  const totalTokens = Number(usage.total_tokens ?? usage.totalTokens ?? promptTokens + completionTokens);
+  return {
+    promptTokens: Math.max(0, Math.round(promptTokens || 0)),
+    completionTokens: Math.max(0, Math.round(completionTokens || 0)),
+    totalTokens: Math.max(0, Math.round(totalTokens || 0)),
+    estimated: Boolean(usage.estimated)
+  };
+}
+
+function estimateUsage(promptTokens, completionText) {
+  const completionTokens = estimateTextTokens(completionText);
+  return {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
+    estimated: true
+  };
+}
+
+function estimateMessagesTokens(messages) {
+  return estimateTextTokens(messages.map((message) => `${message.role || ""}:${message.content || ""}`).join("\n"));
+}
+
+function estimateTextTokens(text) {
+  const raw = String(text || "");
+  const cjk = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
+  const asciiWords = (raw.replace(/[\u4e00-\u9fff]/g, " ").match(/[A-Za-z0-9_]+/g) || []).length;
+  return Math.max(1, Math.ceil(cjk * 1.15 + asciiWords * 1.3));
+}
+
+function localDateKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function serveStatic(req, res) {
