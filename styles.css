@@ -851,6 +851,15 @@ textarea {
   box-shadow: inset 4px 0 0 var(--family, var(--accent));
 }
 
+.project-card.completed {
+  opacity: 0.66;
+  background: #f4f7fb;
+}
+
+.project-card.completed strong {
+  text-decoration: line-through;
+}
+
 .progress {
   height: 10px;
   border-radius: 999px;

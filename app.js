@@ -517,7 +517,7 @@ function renderProjects() {
       const done = invested(project.id);
       const pct = projectProgress(project);
       return `
-        <article class="project-card ${state.activeProjectId === project.id ? "active" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
+        <article class="project-card ${state.activeProjectId === project.id ? "active" : ""} ${project.status === "completed" ? "completed" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
           <div class="project-card-title">
             <strong>${escapeHtml(project.name)}</strong>
             <span>${pct}%</span>
@@ -681,7 +681,10 @@ function renderProjectDetail() {
         <h3>${escapeHtml(project.name)}</h3>
         <p>${escapeHtml(project.description || "暂无描述")}</p>
       </div>
-      <button class="secondary danger" data-delete-project="${project.id}" type="button">删除</button>
+      <div class="detail-actions">
+        <button class="secondary" data-complete-project="${project.id}" type="button">${project.status === "completed" ? "改为进行中" : "标记完成"}</button>
+        <button class="secondary danger" data-delete-project="${project.id}" type="button">删除</button>
+      </div>
     </div>
     <div class="stats">
       <div class="stat"><span>预计</span><strong>${optionalHours(project.estimate)}</strong></div>
@@ -1637,11 +1640,22 @@ function bindEvents() {
     }
     if (target.dataset.deleteProject) {
       const projectId = target.dataset.deleteProject;
+      const project = projectById(projectId);
+      const confirmed = window.confirm(`删除项目会同时删除它过去和未来的计划/实际记录。\n\n如果只是做完了，请点“标记完成”。\n\n确定删除「${project?.name || "这个项目"}」吗？`);
+      if (!confirmed) return;
       state.projects = state.projects.filter((project) => project.id !== projectId);
       state.planned = state.planned.filter((block) => block.projectId !== projectId);
       state.actual = state.actual.filter((entry) => entry.projectId !== projectId);
       state.activeProjectId = state.projects[0]?.id || "";
       saveAndRender();
+    }
+    if (target.dataset.completeProject) {
+      const project = projectById(target.dataset.completeProject);
+      if (project) {
+        project.status = project.status === "completed" ? "in-progress" : "completed";
+        project.completedAt = project.status === "completed" ? new Date().toISOString() : null;
+        saveAndRender();
+      }
     }
     if (target.id === "generateTasks") {
       const project = projectById(state.activeProjectId);

@@ -276,6 +276,15 @@ textarea {
   box-shadow: inset 4px 0 0 var(--family, var(--accent)), 0 8px 18px rgba(36, 48, 66, 0.08);
 }
 
+.project-mobile-item.completed {
+  opacity: 0.66;
+  background: #f4f7fb;
+}
+
+.project-mobile-item.completed strong {
+  text-decoration: line-through;
+}
+
 .project-detail-card {
   animation: rise 240ms ease both;
 }

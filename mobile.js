@@ -348,10 +348,11 @@ function renderProjectItem(project) {
   const done = invested(project.id);
   const pct = project.estimate ? Math.min(100, Math.round((done / project.estimate) * 100)) : 0;
   return `
-    <article class="mobile-item project-mobile-item ${activeProjectId === project.id ? "active" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
+    <article class="mobile-item project-mobile-item ${activeProjectId === project.id ? "active" : ""} ${project.status === "completed" ? "completed" : ""}" data-project="${project.id}" style="--family:${projectColor(project.id)}">
       <strong>${escapeHtml(project.name)}</strong>
       <div class="mobile-meta">
         <span>${Number(project.estimate) > 0 ? `${hours(done)} / ${hours(project.estimate)}` : `累计 ${hours(done)}`}</span>
+        <span>${project.status === "completed" ? "完成" : "进行中"}</span>
         <span>${project.tasks?.length || 0} 个任务</span>
       </div>
       <div class="progress"><span style="width:${pct}%"></span></div>
@@ -369,8 +370,9 @@ function renderProjectDetail() {
     <div class="section-head">
       <div>
         <h2>${escapeHtml(project.name)}</h2>
-        <p class="detail-subtitle">${Number(project.estimate) > 0 ? `${hours(invested(project.id))} / ${hours(project.estimate)}` : `累计 ${hours(invested(project.id))}`}</p>
+        <p class="detail-subtitle">${Number(project.estimate) > 0 ? `${hours(invested(project.id))} / ${hours(project.estimate)}` : `累计 ${hours(invested(project.id))}`} · ${project.status === "completed" ? "完成" : "进行中"}</p>
       </div>
+      <button data-mobile-complete-project="${project.id}" type="button">${project.status === "completed" ? "进行中" : "完成"}</button>
     </div>
     <form id="mobileTaskForm" class="mobile-form">
       <input id="mobileTaskName" type="text" placeholder="细分任务名称" required />
@@ -455,6 +457,16 @@ function bindEvents() {
       activeProjectId = projectCard.dataset.project;
       state.activeProjectId = activeProjectId;
       renderProjects();
+    }
+    const completeProject = event.target.closest("[data-mobile-complete-project]");
+    if (completeProject) {
+      const project = projectById(completeProject.dataset.mobileCompleteProject);
+      if (project) {
+        project.status = project.status === "completed" ? "in-progress" : "completed";
+        project.completedAt = project.status === "completed" ? new Date().toISOString() : null;
+        saveState();
+      }
+      return;
     }
     const toggleSticky = event.target.closest("[data-mobile-toggle-sticky]");
     if (toggleSticky) {
