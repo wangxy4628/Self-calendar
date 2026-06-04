@@ -48,6 +48,7 @@ const seed = {
   planned: [],
   habits: [],
   habitLogs: [],
+  stickyNotes: [],
   reviewMessages: [],
   aiMemory: [],
   actual: [
@@ -105,6 +106,7 @@ function normalizeState(input) {
   merged.dailyReviews ||= {};
   merged.habits ||= [];
   merged.habitLogs ||= [];
+  merged.stickyNotes ||= [];
   merged.reviewMessages ||= [];
   merged.aiMemory ||= [];
   merged.statusTags = Array.isArray(merged.statusTags) && merged.statusTags.length ? merged.statusTags : structuredClone(seed.statusTags);
@@ -158,6 +160,7 @@ async function hydrateStateFromServer() {
     renderCalendar();
     renderProjects();
     renderHabits();
+    renderStickyNotes();
   } catch {
     remoteSyncReady = false;
     cloudSyncStatus = "本地";
@@ -349,6 +352,7 @@ function setView(view) {
   $("#calendarView").classList.toggle("active-view", view === "calendar");
   $("#projectsView").classList.toggle("active-view", view === "projects");
   $("#habitsView").classList.toggle("active-view", view === "habits");
+  $("#stickyView").classList.toggle("active-view", view === "sticky");
 }
 
 function renderProjectOptions() {
@@ -625,6 +629,39 @@ function currentTimeValue() {
 
 function nextHabitColor() {
   return ["#2563eb", "#0f766e", "#f59e0b", "#ec4899", "#7c3aed", "#c2410c", "#0891b2", "#4d7c0f"][state.habits.length % 8];
+}
+
+function renderStickyNotes() {
+  if (!$("#stickyView")) return;
+  const notes = [...state.stickyNotes].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const openCount = notes.filter((note) => !note.checked).length;
+  $("#stickyCount").textContent = `${openCount} / ${notes.length} 张`;
+  $("#stickyBoard").innerHTML = notes.length
+    ? notes.map(renderStickyNote).join("")
+    : '<p class="empty-state">还没有便利贴。想到什么就先贴在这里。</p>';
+}
+
+function renderStickyNote(note, index) {
+  return `
+    <article class="sticky-note ${note.checked ? "checked" : ""}" style="--tilt:${stickyTilt(index)}deg">
+      <time>${formatStickyTime(note.createdAt)}</time>
+      <p>${escapeHtml(note.text)}</p>
+      <div class="sticky-actions">
+        <button class="secondary" data-toggle-sticky="${note.id}" type="button">${note.checked ? "重新打开" : "已整理"}</button>
+        <button class="secondary danger" data-delete-sticky="${note.id}" type="button">删除</button>
+      </div>
+    </article>
+  `;
+}
+
+function stickyTilt(index) {
+  return [-1.4, 0.8, -0.5, 1.2, -1, 0.4][index % 6];
+}
+
+function formatStickyTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return `${formatLocalDate(date)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function renderProjectDetail() {
@@ -1080,6 +1117,7 @@ function saveAndRender() {
   renderCalendar();
   renderProjects();
   renderHabits();
+  renderStickyNotes();
 }
 
 async function generateTasks(project, instruction = "请生成第一版任务拆解。") {
@@ -1424,6 +1462,20 @@ function bindEvents() {
     $("#habitTime").value = currentTimeValue();
     saveAndRender();
   });
+  $("#stickyForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = $("#stickyText").value.trim();
+    if (!text) return;
+    state.stickyNotes.push({
+      id: id("sn"),
+      text,
+      checked: false,
+      createdAt: new Date().toISOString(),
+      checkedAt: null
+    });
+    event.target.reset();
+    saveAndRender();
+  });
   document.body.addEventListener("submit", async (event) => {
     if (event.target.id === "manualTaskForm") {
       event.preventDefault();
@@ -1554,6 +1606,18 @@ function bindEvents() {
     }
     if (target.dataset.deleteHabitLog) {
       state.habitLogs = state.habitLogs.filter((log) => log.id !== target.dataset.deleteHabitLog);
+      saveAndRender();
+    }
+    if (target.dataset.toggleSticky) {
+      const note = state.stickyNotes.find((item) => item.id === target.dataset.toggleSticky);
+      if (note) {
+        note.checked = !note.checked;
+        note.checkedAt = note.checked ? new Date().toISOString() : null;
+        saveAndRender();
+      }
+    }
+    if (target.dataset.deleteSticky) {
+      state.stickyNotes = state.stickyNotes.filter((note) => note.id !== target.dataset.deleteSticky);
       saveAndRender();
     }
     if (target.dataset.copyPlan) {
@@ -1911,6 +1975,7 @@ bindEvents();
 renderCalendar();
 renderProjects();
 renderHabits();
+renderStickyNotes();
 updateTimerDisplay();
 restoreTimer();
 hydrateStateFromServer();

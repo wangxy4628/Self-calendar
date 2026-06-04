@@ -23,6 +23,7 @@
           <button class="nav-button active" data-view="calendar" type="button">日历</button>
           <button class="nav-button" data-view="projects" type="button">项目</button>
           <button class="nav-button" data-view="habits" type="button">习惯</button>
+          <button class="nav-button" data-view="sticky" type="button">便利贴</button>
         </nav>
         <section class="today-summary" aria-label="今日概览">
           <span>今日实际</span>
@@ -226,6 +227,41 @@
                 <strong id="habitCount">0 次</strong>
               </div>
               <div id="habitTimeline" class="habit-timeline-board"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="stickyView" class="view">
+          <div class="view-header">
+            <div>
+              <p class="eyebrow">便利贴</p>
+              <h2>灵感暂存箱</h2>
+            </div>
+          </div>
+
+          <section class="sticky-layout">
+            <article class="panel sticky-compose">
+              <div class="panel-head">
+                <div>
+                  <h3>快速记下</h3>
+                  <p>先捕捉想法，之后再慢慢整理。</p>
+                </div>
+              </div>
+              <form id="stickyForm" class="form">
+                <textarea id="stickyText" placeholder="刚刚想到什么？" required></textarea>
+                <button type="submit">贴上去</button>
+              </form>
+            </article>
+
+            <article class="panel sticky-board-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>按时间排列</h3>
+                  <p>点击“已整理”会划去这张便利贴。</p>
+                </div>
+                <strong id="stickyCount">0 张</strong>
+              </div>
+              <div id="stickyBoard" class="sticky-board"></div>
             </article>
           </section>
         </section>

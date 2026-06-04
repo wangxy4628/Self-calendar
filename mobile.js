@@ -24,6 +24,7 @@ let state = {
   projects: [],
   planned: [],
   actual: [],
+  stickyNotes: [],
   dailyReviews: {}
 };
 let syncStatus = "本地";
@@ -147,6 +148,7 @@ function normalizeState(input) {
     })),
     planned: input.planned || [],
     actual: input.actual || [],
+    stickyNotes: input.stickyNotes || [],
     dailyReviews: input.dailyReviews || {},
     statusTags: Array.isArray(input.statusTags) && input.statusTags.length ? input.statusTags : state.statusTags,
     lastSeenToday: input.lastSeenToday || today
@@ -241,6 +243,7 @@ function render() {
   renderCalendar();
   renderProjects();
   renderReview();
+  renderStickyNotes();
 }
 
 function renderWeek() {
@@ -405,6 +408,32 @@ function renderReview() {
     : '<p class="empty">这一天还没有复盘。</p>';
 }
 
+function renderStickyNotes() {
+  const list = $("#mobileStickyList");
+  if (!list) return;
+  const notes = [...state.stickyNotes].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  list.innerHTML = notes.length ? notes.map(renderMobileStickyNote).join("") : '<p class="empty">还没有便利贴。</p>';
+}
+
+function renderMobileStickyNote(note) {
+  return `
+    <article class="mobile-sticky ${note.checked ? "checked" : ""}">
+      <time>${formatStickyTime(note.createdAt)}</time>
+      <p>${escapeHtml(note.text)}</p>
+      <div class="mobile-sticky-actions">
+        <button data-mobile-toggle-sticky="${note.id}" type="button">${note.checked ? "重新打开" : "已整理"}</button>
+        <button class="danger" data-mobile-delete-sticky="${note.id}" type="button">删除</button>
+      </div>
+    </article>
+  `;
+}
+
+function formatStickyTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return `${formatLocalDate(date)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 function bindEvents() {
   $$(".bottom-nav button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -426,6 +455,21 @@ function bindEvents() {
       activeProjectId = projectCard.dataset.project;
       state.activeProjectId = activeProjectId;
       renderProjects();
+    }
+    const toggleSticky = event.target.closest("[data-mobile-toggle-sticky]");
+    if (toggleSticky) {
+      const note = state.stickyNotes.find((item) => item.id === toggleSticky.dataset.mobileToggleSticky);
+      if (note) {
+        note.checked = !note.checked;
+        note.checkedAt = note.checked ? new Date().toISOString() : null;
+        saveState();
+      }
+      return;
+    }
+    const deleteSticky = event.target.closest("[data-mobile-delete-sticky]");
+    if (deleteSticky) {
+      state.stickyNotes = state.stickyNotes.filter((note) => note.id !== deleteSticky.dataset.mobileDeleteSticky);
+      saveState();
     }
   });
   document.body.addEventListener("submit", (event) => {
@@ -495,6 +539,20 @@ function bindEvents() {
       createdAt: new Date().toISOString(),
       tasks: [],
       aiMessages: []
+    });
+    event.target.reset();
+    saveState();
+  });
+  $("#mobileStickyForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = $("#mobileStickyText").value.trim();
+    if (!text) return;
+    state.stickyNotes.push({
+      id: id("sn"),
+      text,
+      checked: false,
+      createdAt: new Date().toISOString(),
+      checkedAt: null
     });
     event.target.reset();
     saveState();

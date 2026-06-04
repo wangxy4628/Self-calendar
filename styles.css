@@ -438,6 +438,13 @@ textarea {
   align-items: start;
 }
 
+.sticky-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(520px, 1.6fr);
+  gap: 18px;
+  align-items: start;
+}
+
 .project-side {
   display: grid;
   gap: 14px;
@@ -757,6 +764,74 @@ textarea {
 .habit-column .habit-axis {
   min-height: 500px;
   margin-left: 50%;
+}
+
+.sticky-compose textarea {
+  min-height: 180px;
+  background: #fffbea;
+  border-color: #f3d37a;
+}
+
+.sticky-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.sticky-note {
+  display: grid;
+  gap: 12px;
+  min-height: 170px;
+  padding: 16px;
+  border: 1px solid #f0d46f;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38), transparent 28px),
+    #fff2a8;
+  box-shadow: 0 8px 0 rgba(168, 130, 25, 0.08), 0 18px 30px rgba(36, 48, 66, 0.12);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 120ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.sticky-note:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 0 10px 0 rgba(168, 130, 25, 0.08), 0 22px 34px rgba(36, 48, 66, 0.14);
+}
+
+.sticky-note time {
+  color: #8a6a12;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sticky-note p {
+  margin: 0;
+  color: #3d3211;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sticky-note.checked {
+  opacity: 0.58;
+  background: #f3f4f6;
+  border-color: #d4d8df;
+}
+
+.sticky-note.checked p {
+  text-decoration: line-through;
+}
+
+.sticky-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-self: end;
+}
+
+.sticky-actions button {
+  min-height: 34px;
 }
 
 .project-card:hover {
@@ -1226,7 +1301,8 @@ textarea {
   #app,
   .day-grid,
   .project-layout,
-  .habit-layout {
+  .habit-layout,
+  .sticky-layout {
     grid-template-columns: 1fr;
   }
 

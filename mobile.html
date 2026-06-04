@@ -111,10 +111,24 @@
         </section>
       </section>
 
+      <section id="stickyScreen" class="screen">
+        <section class="mobile-section">
+          <div class="section-head">
+            <h2>便利贴</h2>
+          </div>
+          <form id="mobileStickyForm" class="mobile-form">
+            <textarea id="mobileStickyText" placeholder="刚刚想到什么？" required></textarea>
+            <button type="submit">贴上去</button>
+          </form>
+          <div id="mobileStickyList" class="mobile-list"></div>
+        </section>
+      </section>
+
       <nav class="bottom-nav" aria-label="手机导航">
         <button class="active" data-screen="calendarScreen" type="button">日历</button>
         <button data-screen="projectsScreen" type="button">项目</button>
         <button data-screen="reviewScreen" type="button">复盘</button>
+        <button data-screen="stickyScreen" type="button">便利贴</button>
       </nav>
     </main>
 

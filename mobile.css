@@ -338,7 +338,7 @@ textarea {
   left: 50%;
   bottom: 14px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   width: min(402px, calc(100% - 28px));
   padding: 7px;
@@ -348,6 +348,44 @@ textarea {
   box-shadow: 0 18px 36px rgba(36, 48, 66, 0.16);
   transform: translateX(-50%);
   backdrop-filter: blur(10px);
+}
+
+.mobile-sticky {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid #f0d46f;
+  border-radius: 14px;
+  background: #fff2a8;
+  box-shadow: 0 8px 0 rgba(168, 130, 25, 0.08), 0 14px 24px rgba(36, 48, 66, 0.1);
+}
+
+.mobile-sticky.checked {
+  opacity: 0.58;
+  background: #f3f4f6;
+  border-color: #d4d8df;
+}
+
+.mobile-sticky time {
+  color: #8a6a12;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mobile-sticky p {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mobile-sticky.checked p {
+  text-decoration: line-through;
+}
+
+.mobile-sticky-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .bottom-nav button {
