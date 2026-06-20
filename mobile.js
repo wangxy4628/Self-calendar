@@ -285,7 +285,7 @@ function renderOptions() {
 
 function renderTaskOptions() {
   [
-    ["#mobilePlanProject", "#mobilePlanTask", true],
+    ["#mobilePlanProject", "#mobilePlanTask", false],
     ["#mobileActualProject", "#mobileActualTask", false],
     ["#mobileTimerProject", "#mobileTimerTask", false]
   ].forEach(([projectSelector, taskSelector, required]) => {

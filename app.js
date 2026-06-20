@@ -382,7 +382,7 @@ function renderProjectOptions() {
 
 function renderTaskOptions() {
   [
-    ["#planProject", "#planTask", true],
+    ["#planProject", "#planTask", false],
     ["#actualProject", "#actualTask", false],
     ["#timerProject", "#timerTask", false]
   ].forEach(([projectSelector, taskSelector, required]) => {
