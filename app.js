@@ -1407,6 +1407,9 @@ function bindEvents() {
   ["#planProject", "#actualProject", "#timerProject"].forEach((selector) => {
     $(selector).addEventListener("change", renderTaskOptions);
   });
+  ["#planStart", "#planEnd"].forEach((selector) => {
+    $(selector).addEventListener("blur", () => normalizeTimeField(selector));
+  });
   $("#projectForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const project = {
@@ -1426,13 +1429,19 @@ function bindEvents() {
   });
   $("#planForm").addEventListener("submit", (event) => {
     event.preventDefault();
+    const start = normalizeTimeField("#planStart");
+    const end = normalizeTimeField("#planEnd");
+    if (start === null || end === null) {
+      window.alert("请输入有效时间，例如 1600、16:00 或 4pm。");
+      return;
+    }
     addPlanned({
       date: state.selectedDate,
       projectId: $("#planProject").value,
       taskId: $("#planTask").value,
       title: $("#planTitle").value.trim() || taskById($("#planProject").value, $("#planTask").value)?.name || "未命名计划",
-      start: $("#planStart").value,
-      end: $("#planEnd").value,
+      start,
+      end,
       statusTag: $("#planStatusTag").value,
       notes: $("#planNotes").value.trim()
     });
@@ -1925,6 +1934,42 @@ function restoreTimer() {
 function timeToMinutes(time) {
   const [hoursPart, minutesPart] = time.split(":").map(Number);
   return hoursPart * 60 + minutesPart;
+}
+
+function parseFlexibleTime(value) {
+  const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) return "";
+  let hoursPart;
+  let minutesPart;
+  const meridiemMatch = raw.match(/^(\d{1,2})(?::?(\d{2}))?(am|pm)$/);
+  if (meridiemMatch) {
+    hoursPart = Number(meridiemMatch[1]);
+    minutesPart = Number(meridiemMatch[2] || 0);
+    if (hoursPart < 1 || hoursPart > 12) return null;
+    if (meridiemMatch[3] === "pm" && hoursPart !== 12) hoursPart += 12;
+    if (meridiemMatch[3] === "am" && hoursPart === 12) hoursPart = 0;
+  } else if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    [hoursPart, minutesPart] = raw.split(":").map(Number);
+  } else if (/^\d{1,4}$/.test(raw)) {
+    if (raw.length <= 2) {
+      hoursPart = Number(raw);
+      minutesPart = 0;
+    } else {
+      hoursPart = Number(raw.slice(0, -2));
+      minutesPart = Number(raw.slice(-2));
+    }
+  } else {
+    return null;
+  }
+  if (hoursPart < 0 || hoursPart > 23 || minutesPart < 0 || minutesPart > 59) return null;
+  return `${String(hoursPart).padStart(2, "0")}:${String(minutesPart).padStart(2, "0")}`;
+}
+
+function normalizeTimeField(selector) {
+  const field = $(selector);
+  const parsed = parseFlexibleTime(field.value);
+  if (parsed !== null) field.value = parsed;
+  return parsed;
 }
 
 function minutesToTime(value) {

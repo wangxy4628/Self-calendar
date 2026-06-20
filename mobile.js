@@ -122,6 +122,42 @@ function plannedDuration(block) {
   return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
 }
 
+function parseFlexibleTime(value) {
+  const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) return "";
+  let hoursPart;
+  let minutesPart;
+  const meridiemMatch = raw.match(/^(\d{1,2})(?::?(\d{2}))?(am|pm)$/);
+  if (meridiemMatch) {
+    hoursPart = Number(meridiemMatch[1]);
+    minutesPart = Number(meridiemMatch[2] || 0);
+    if (hoursPart < 1 || hoursPart > 12) return null;
+    if (meridiemMatch[3] === "pm" && hoursPart !== 12) hoursPart += 12;
+    if (meridiemMatch[3] === "am" && hoursPart === 12) hoursPart = 0;
+  } else if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    [hoursPart, minutesPart] = raw.split(":").map(Number);
+  } else if (/^\d{1,4}$/.test(raw)) {
+    if (raw.length <= 2) {
+      hoursPart = Number(raw);
+      minutesPart = 0;
+    } else {
+      hoursPart = Number(raw.slice(0, -2));
+      minutesPart = Number(raw.slice(-2));
+    }
+  } else {
+    return null;
+  }
+  if (hoursPart < 0 || hoursPart > 23 || minutesPart < 0 || minutesPart > 59) return null;
+  return `${String(hoursPart).padStart(2, "0")}:${String(minutesPart).padStart(2, "0")}`;
+}
+
+function normalizeTimeField(selector) {
+  const field = $(selector);
+  const parsed = parseFlexibleTime(field.value);
+  if (parsed !== null) field.value = parsed;
+  return parsed;
+}
+
 function planTimeLabel(block) {
   return block.start && block.end ? `${block.start}-${block.end}` : "当天完成";
 }
@@ -512,8 +548,17 @@ function bindEvents() {
   $("#showActualForm").addEventListener("click", () => $("#mobileActualForm").classList.toggle("collapsed"));
   $("#showProjectForm").addEventListener("click", () => $("#mobileProjectForm").classList.toggle("collapsed"));
   ["#mobilePlanProject", "#mobileActualProject", "#mobileTimerProject"].forEach((selector) => $(selector).addEventListener("change", renderTaskOptions));
+  ["#mobilePlanStart", "#mobilePlanEnd"].forEach((selector) => {
+    $(selector).addEventListener("blur", () => normalizeTimeField(selector));
+  });
   $("#mobilePlanForm").addEventListener("submit", (event) => {
     event.preventDefault();
+    const start = normalizeTimeField("#mobilePlanStart");
+    const end = normalizeTimeField("#mobilePlanEnd");
+    if (start === null || end === null) {
+      window.alert("请输入有效时间，例如 1600、16:00 或 4pm。");
+      return;
+    }
     const projectId = $("#mobilePlanProject").value;
     const taskId = $("#mobilePlanTask").value;
     state.planned.push({
@@ -522,8 +567,8 @@ function bindEvents() {
       projectId,
       taskId,
       title: $("#mobilePlanTitle").value.trim() || taskById(projectId, taskId)?.name || "未命名计划",
-      start: $("#mobilePlanStart").value,
-      end: $("#mobilePlanEnd").value,
+      start,
+      end,
       statusTag: $("#mobilePlanStatusTag").value,
       notes: $("#mobilePlanNotes").value.trim(),
       source: "手机计划"
