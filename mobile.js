@@ -262,7 +262,14 @@ function renderWeek() {
 
 function renderOptions() {
   const projectOptions = state.projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join("");
-  ["#mobilePlanProject", "#mobileActualProject", "#mobileTimerProject"].forEach((selector) => {
+  const plannableProjects = state.projects.filter((project) => project.status !== "completed");
+  const planOptions = plannableProjects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join("");
+  const previousPlan = $("#mobilePlanProject").value;
+  $("#mobilePlanProject").innerHTML = planOptions || '<option value="">没有可安排的项目</option>';
+  if (previousPlan && plannableProjects.some((project) => project.id === previousPlan)) {
+    $("#mobilePlanProject").value = previousPlan;
+  }
+  ["#mobileActualProject", "#mobileTimerProject"].forEach((selector) => {
     const previous = $(selector).value;
     $(selector).innerHTML = projectOptions || '<option value="">先创建项目</option>';
     if (previous && state.projects.some((project) => project.id === previous)) $(selector).value = previous;

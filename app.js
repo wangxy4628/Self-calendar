@@ -357,7 +357,14 @@ function setView(view) {
 
 function renderProjectOptions() {
   const options = state.projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join("");
-  ["#planProject", "#actualProject", "#timerProject"].forEach((selector) => {
+  const plannableProjects = state.projects.filter((project) => project.status !== "completed");
+  const planOptions = plannableProjects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join("");
+  const previousPlan = $("#planProject").value;
+  $("#planProject").innerHTML = planOptions || '<option value="">没有可安排的项目</option>';
+  if (previousPlan && plannableProjects.some((project) => project.id === previousPlan)) {
+    $("#planProject").value = previousPlan;
+  }
+  ["#actualProject", "#timerProject"].forEach((selector) => {
     const previous = $(selector).value;
     $(selector).innerHTML = options || '<option value="">先创建项目</option>';
     if (previous && state.projects.some((project) => project.id === previous)) {
